@@ -1,0 +1,71 @@
+---
+title: Medallion Architecture — Data Flow
+---
+flowchart TB
+    subgraph SOURCES["Data Sources"]
+        PG[(PostgreSQL)]
+        API[REST API]
+        CSV[CSV / JSON Files]
+        KAFKA[Kafka Topics]
+    end
+
+    subgraph BRONZE["🥉 Bronze Layer — Raw Ingestion"]
+        B_CUST[bronze.customers]
+        B_ORD[bronze.orders]
+        B_ITEMS[bronze.order_items]
+        B_PROD[bronze.products]
+    end
+
+    subgraph QG1["Quality Gate 1"]
+        DQ1{{"Schema Validation\nNull Checks\nType Validation"}}
+    end
+
+    subgraph QUARANTINE["🚫 Quarantine"]
+        Q_CUST[quarantine/customers]
+        Q_ORD[quarantine/orders]
+    end
+
+    subgraph SILVER["🥈 Silver Layer — Cleansed & Conformed"]
+        S_CUST[silver.customers\nSCD Type 2]
+        S_ORD[silver.orders]
+        S_ITEMS[silver.order_items]
+        S_PROD[silver.products]
+    end
+
+    subgraph QG2["Quality Gate 2"]
+        DQ2{{"Referential Integrity\nBusiness Rules\nValue Ranges"}}
+    end
+
+    subgraph GOLD["🥇 Gold Layer — Business Aggregates"]
+        G_C360[gold.customer_360\nRFM + LTV]
+        G_REV[gold.daily_revenue\nRolling Averages]
+        G_PROD[gold.product_performance\nMargin Analysis]
+    end
+
+    subgraph CONSUME["Consumers"]
+        BI[BI Tools\nLooker / Tableau]
+        ML[ML Feature Store]
+        REPORT[Automated Reports]
+    end
+
+    PG --> B_CUST & B_ORD
+    API --> B_ORD
+    CSV --> B_CUST & B_ORD & B_ITEMS & B_PROD
+    KAFKA --> B_ORD
+
+    B_CUST & B_ORD & B_ITEMS & B_PROD --> DQ1
+    DQ1 -->|PASS| S_CUST & S_ORD & S_ITEMS & S_PROD
+    DQ1 -->|FAIL| Q_CUST & Q_ORD
+
+    S_CUST & S_ORD --> DQ2
+    DQ2 -->|PASS| G_C360 & G_REV
+    S_PROD & S_ITEMS & S_ORD --> G_PROD
+
+    G_C360 & G_REV & G_PROD --> BI & ML & REPORT
+
+    style BRONZE fill:#CD7F32,color:#fff
+    style SILVER fill:#C0C0C0,color:#000
+    style GOLD fill:#FFD700,color:#000
+    style QUARANTINE fill:#FF6B6B,color:#fff
+    style QG1 fill:#4ECDC4,color:#000
+    style QG2 fill:#4ECDC4,color:#000

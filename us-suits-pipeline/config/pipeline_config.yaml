@@ -1,0 +1,93 @@
+# US Suits Pipeline Configuration
+
+pipeline:
+  name: "us-suits-medallion"
+  version: "1.0.0"
+  project_id: "your-gcp-project"
+
+paths:
+  bronze: "data/bronze/suits"
+  silver: "data/silver/suits"
+  gold: "data/gold/suits"
+  quarantine: "data/quarantine"
+  checkpoints: "data/checkpoints"
+  # GCS paths (production)
+  gcs_bucket: "gs://your-bucket/us-suits"
+  gcs_bronze: "gs://your-bucket/us-suits/bronze"
+  gcs_silver: "gs://your-bucket/us-suits/silver"
+  gcs_gold: "gs://your-bucket/us-suits/gold"
+
+bigquery:
+  project: "your-gcp-project"
+  dataset_bronze: "suits_bronze"
+  dataset_silver: "suits_silver"
+  dataset_gold: "suits_gold"
+  location: "US"
+
+spark:
+  app_name: "us-suits-pipeline"
+  master: "local[*]"  # Change to yarn/k8s for production
+  config:
+    spark.sql.parquet.compression.codec: "snappy"
+    spark.sql.shuffle.partitions: 200
+    spark.sql.adaptive.enabled: "true"
+    spark.serializer: "org.apache.spark.serializer.KryoSerializer"
+
+states:
+  TX:
+    name: "Texas"
+    county: "Harris County"
+    format: "csv"
+    delimiter: "|"
+    encoding: "utf-8"
+    date_format: "MM/dd/yyyy"
+    source_path: "sample_data/tx_harris_suits.csv"
+    
+  CA:
+    name: "California"
+    county: "Los Angeles County"
+    format: "json"
+    encoding: "utf-8"
+    date_format: "yyyy-MM-dd"
+    source_path: "sample_data/ca_la_suits.json"
+    
+  NY:
+    name: "New York"
+    county: "Kings County"
+    format: "csv"
+    delimiter: ","
+    encoding: "utf-8"
+    date_format: "MM/dd/yyyy"
+    source_path: "sample_data/ny_kings_suits.csv"
+    
+  FL:
+    name: "Florida"
+    county: "Miami-Dade County"
+    format: "csv"
+    delimiter: ","
+    encoding: "utf-8"
+    date_format: "yyyyMMdd"
+    source_path: "sample_data/fl_miamidade_suits.csv"
+    
+  IL:
+    name: "Illinois"
+    county: "Cook County"
+    format: "csv"
+    delimiter: ","
+    encoding: "utf-8"
+    date_format: "dd-MMM-yyyy"
+    source_path: "sample_data/il_cook_suits.csv"
+
+  OH:
+    name: "Ohio"
+    county: "Cuyahoga County"
+    format: "csv"
+    delimiter: "\t"
+    encoding: "utf-8"
+    date_format: "M/d/yyyy"
+    source_path: "sample_data/oh_cuyahoga_suits.csv"
+
+quality:
+  bronze_threshold: 95.0
+  silver_threshold: 98.0
+  gold_threshold: 99.0

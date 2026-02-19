@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  # Local development environment with all dependencies
+  pipeline:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    volumes:
+      - .:/app
+      - pipeline-data:/app/data
+    environment:
+      - PIPELINE_ENV=local
+      - PYTHONPATH=/app
+    command: python run_pipeline.py --date 2025-01-15
+
+  # Airflow for orchestration testing
+  airflow-webserver:
+    image: apache/airflow:2.10.3-python3.11
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - PYTHONPATH=/opt/airflow
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./config:/opt/airflow/config
+    ports:
+      - "8080:8080"
+    command: >
+      bash -c "
+        airflow db init &&
+        airflow users create --username admin --password admin
+          --firstname Admin --lastname User --role Admin --email admin@example.com &&
+        airflow webserver
+      "
+
+  airflow-scheduler:
+    image: apache/airflow:2.10.3-python3.11
+    environment:
+      - AIRFLOW__CORE__LOAD_EXAMPLES=False
+      - AIRFLOW__CORE__DAGS_FOLDER=/opt/airflow/dags
+      - PYTHONPATH=/opt/airflow
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./src:/opt/airflow/src
+      - ./config:/opt/airflow/config
+    command: airflow scheduler
+    depends_on:
+      - airflow-webserver
+
+volumes:
+  pipeline-data:

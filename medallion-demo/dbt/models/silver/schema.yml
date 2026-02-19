@@ -1,0 +1,61 @@
+version: 2
+
+models:
+  - name: silver_customers
+    description: "Cleansed customer records with SCD Type 2 tracking"
+    columns:
+      - name: customer_id
+        description: "Unique customer identifier"
+        tests:
+          - unique
+          - not_null
+      - name: email
+        description: "Lowercase trimmed email"
+        tests:
+          - not_null
+      - name: is_active
+        tests:
+          - accepted_values:
+              values: [true, false]
+      - name: is_current
+        description: "SCD2 current flag"
+        tests:
+          - not_null
+
+  - name: silver_orders
+    description: "Cleansed, deduplicated order records"
+    columns:
+      - name: order_id
+        description: "Unique order identifier"
+        tests:
+          - unique
+          - not_null
+      - name: customer_id
+        tests:
+          - not_null
+      - name: status
+        tests:
+          - accepted_values:
+              values: ['completed', 'shipped', 'processing', 'cancelled', 'refunded']
+      - name: total_amount
+        tests:
+          - not_null
+
+  - name: silver_order_items
+    description: "Cleansed order line items"
+    columns:
+      - name: order_item_id
+        tests:
+          - unique
+          - not_null
+
+  - name: silver_products
+    description: "Cleansed product catalog"
+    columns:
+      - name: product_id
+        tests:
+          - unique
+          - not_null
+      - name: category
+        tests:
+          - not_null

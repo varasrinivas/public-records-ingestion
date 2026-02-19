@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "terraform": {
+      "command": "npx",
+      "args": ["-y", "@anthropic/terraform-mcp-server"]
+    }
+  }
+}

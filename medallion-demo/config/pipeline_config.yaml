@@ -1,0 +1,53 @@
+# Medallion Pipeline Configuration
+
+pipeline:
+  name: "medallion-ecommerce"
+  version: "1.0.0"
+  storage_backend: "local"  # local | gcs | s3
+
+paths:
+  bronze: "data/bronze"
+  silver: "data/silver"
+  gold: "data/gold"
+  quarantine: "data/quarantine"
+  checkpoints: "data/checkpoints"
+
+bronze:
+  sources:
+    customers:
+      type: "csv"
+      path: "sample_data/customers.csv"
+      primary_key: ["customer_id"]
+    orders:
+      type: "csv"
+      path: "sample_data/orders.csv"
+      primary_key: ["order_id"]
+    order_items:
+      type: "csv"
+      path: "sample_data/order_items.csv"
+      primary_key: ["order_item_id"]
+    products:
+      type: "csv"
+      path: "sample_data/products.csv"
+      primary_key: ["product_id"]
+
+silver:
+  dedup_window_days: 7
+  scd_tables: ["customers", "products"]
+  quarantine_threshold: 0.05  # Max 5% rejection rate
+
+gold:
+  customer_360:
+    ltv_tiers:
+      platinum: 5000
+      gold: 1000
+      silver: 250
+      bronze: 0
+    rfm_recency_days: 365
+    rfm_frequency_months: 12
+    rfm_monetary_months: 12
+
+quality:
+  default_threshold: 95.0  # Minimum pass rate %
+  alert_channels: ["slack", "email"]
+  quarantine_spike_multiplier: 2.0

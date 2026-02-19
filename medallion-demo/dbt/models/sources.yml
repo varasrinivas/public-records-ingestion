@@ -1,0 +1,60 @@
+version: 2
+
+sources:
+  - name: raw
+    description: "Raw ingested data from Bronze layer"
+    schema: bronze
+    tables:
+      - name: customers
+        description: "Raw customer records from source systems"
+        columns:
+          - name: customer_id
+            description: "Source customer identifier"
+            tests:
+              - not_null
+          - name: email
+            description: "Customer email address"
+          - name: first_name
+            description: "Customer first name"
+          - name: last_name
+            description: "Customer last name"
+          - name: signup_date
+            description: "Date the customer signed up"
+          - name: is_active
+            description: "Whether the customer is active (string: true/false)"
+
+      - name: orders
+        description: "Raw order records from source systems"
+        columns:
+          - name: order_id
+            description: "Source order identifier"
+            tests:
+              - not_null
+          - name: customer_id
+            description: "Foreign key to customers"
+          - name: order_date
+            description: "Date the order was placed"
+          - name: total_amount
+            description: "Order total in dollars (string, needs casting)"
+          - name: status
+            description: "Order status (completed, shipped, processing, cancelled, refunded)"
+
+      - name: order_items
+        description: "Raw order line items"
+        columns:
+          - name: order_item_id
+            tests:
+              - not_null
+          - name: order_id
+            description: "Foreign key to orders"
+          - name: product_id
+            description: "Foreign key to products"
+
+      - name: products
+        description: "Raw product catalog"
+        columns:
+          - name: product_id
+            tests:
+              - not_null
+          - name: category
+            description: "Product category"

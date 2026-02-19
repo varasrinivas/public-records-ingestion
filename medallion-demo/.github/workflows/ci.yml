@@ -1,0 +1,72 @@
+name: Medallion Pipeline CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install ruff
+      - run: ruff check src/ tests/
+
+  unit-tests:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: pytest tests/unit/ -v --cov=src --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: coverage.xml
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    needs: unit-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python sample_data/generate_sample_data.py
+      - run: pytest tests/integration/ -v --tb=long
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pipeline-data
+          path: data/
+
+  pipeline-smoke-test:
+    runs-on: ubuntu-latest
+    needs: integration-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Run full pipeline
+        run: python run_pipeline.py --date 2025-01-15
+      - name: Verify outputs exist
+        run: |
+          test -f data/bronze/customers/ingestion_date=2025-01-15/*.parquet
+          test -f data/silver/customers/customers.parquet
+          test -f data/gold/customer_360/customer_360.parquet
+          test -f data/gold/daily_revenue/daily_revenue.parquet
+          echo "✅ All pipeline outputs verified"

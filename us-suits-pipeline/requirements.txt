@@ -1,0 +1,30 @@
+# Core Processing
+pyspark>=3.5.0
+pyarrow>=17.0.0
+pandas>=2.2.0
+
+# BigQuery
+google-cloud-bigquery>=3.25.0
+google-cloud-bigquery-storage>=2.26.0
+google-cloud-storage>=2.18.0
+
+# Orchestration
+apache-airflow>=2.10.0
+apache-airflow-providers-google>=10.0.0
+
+# Data Quality
+great-expectations>=1.2.0
+pydantic>=2.9.0
+
+# Testing
+pytest>=8.3.0
+pytest-cov>=6.0.0
+pytest-mock>=3.14.0
+chispa>=0.10.1  # PySpark test utilities
+faker>=30.0.0
+
+# Utilities
+python-dotenv>=1.0.0
+structlog>=24.4.0
+click>=8.1.0
+pyyaml>=6.0.2
