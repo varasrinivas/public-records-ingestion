@@ -1,0 +1,53 @@
+---
+title: Airflow DAG — suits_medallion_pipeline
+---
+flowchart TD
+    START((Start)) --> TX & CA & NY & FL & IL & OH
+
+    subgraph INGEST["Bronze Ingest — Parallel"]
+        TX["ingest_tx_suits<br/><i>Pipe CSV</i>"]
+        CA["ingest_ca_suits<br/><i>Nested JSON</i>"]
+        NY["ingest_ny_suits<br/><i>Comma CSV</i>"]
+        FL["ingest_fl_suits<br/><i>CSV yyyyMMdd</i>"]
+        IL["ingest_il_suits<br/><i>CSV dd-MMM-yyyy</i>"]
+        OH["ingest_oh_suits<br/><i>Tab CSV</i>"]
+    end
+
+    TX & CA & NY & FL & IL & OH --> BQG
+
+    BQG{"🔍 Bronze<br/>Quality Gate<br/><b>≥95% pass</b>"}
+
+    BQG -->|PASS| SILVER
+    BQG -->|FAIL| QUARANTINE["🚫 Quarantine<br/>+ Alert"]
+
+    SILVER["🥈 Silver Canonicalize<br/><i>Field mapping, date parsing,<br/>type harmonization, dedup</i>"]
+
+    SILVER --> SQG
+
+    SQG{"🔍 Silver<br/>Quality Gate<br/><b>≥98% pass</b>"}
+
+    SQG -->|PASS| G_SUIT & G_PARTY & G_ANALYTICS
+    SQG -->|FAIL| QUARANTINE2["🚫 Quarantine<br/>+ Alert"]
+
+    subgraph GOLD_BUILD["Gold Build — Parallel"]
+        G_SUIT["gold_suit_best_view<br/><i>Enriched suit records</i>"]
+        G_PARTY["gold_party_best_view<br/><i>Cross-suit party metrics</i>"]
+        G_ANALYTICS["gold_analytics<br/><i>State summary +<br/>monthly trends</i>"]
+    end
+
+    G_SUIT & G_PARTY & G_ANALYTICS --> BQ_LOAD
+
+    BQ_LOAD["📦 BigQuery Load<br/><i>GCS Parquet → BQ tables<br/>WRITE_TRUNCATE</i>"]
+
+    BQ_LOAD --> END((Notify ✓))
+
+    style START fill:#475569,stroke:#64748b,color:#fff
+    style END fill:#065f46,stroke:#34d399,color:#fff
+    style INGEST fill:#451a03,stroke:#d97706,color:#fbbf24
+    style BQG fill:#064e3b,stroke:#10b981,color:#34d399
+    style SQG fill:#064e3b,stroke:#10b981,color:#34d399
+    style SILVER fill:#1e293b,stroke:#94a3b8,color:#e2e8f0
+    style GOLD_BUILD fill:#422006,stroke:#eab308,color:#fef08a
+    style BQ_LOAD fill:#1a2236,stroke:#3b82f6,color:#93c5fd
+    style QUARANTINE fill:#7f1d1d,stroke:#ef4444,color:#fca5a5
+    style QUARANTINE2 fill:#7f1d1d,stroke:#ef4444,color:#fca5a5

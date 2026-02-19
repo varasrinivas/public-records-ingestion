@@ -1,0 +1,103 @@
+---
+title: US Suits Pipeline — Medallion Architecture Data Flow
+---
+flowchart TB
+    subgraph SOURCES["🏛️ State Court Data Sources"]
+        TX["TX — Harris County<br/>Pipe CSV ∣ MM/dd/yyyy"]
+        CA["CA — LA County<br/>Nested JSON ∣ yyyy-MM-dd"]
+        NY["NY — Kings County<br/>Comma CSV ∣ MM/dd/yyyy"]
+        FL["FL — Miami-Dade<br/>CSV ∣ yyyyMMdd"]
+        IL["IL — Cook County<br/>CSV ∣ dd-MMM-yyyy"]
+        OH["OH — Cuyahoga<br/>Tab CSV ∣ M/d/yyyy"]
+    end
+
+    subgraph BRONZE["🥉 BRONZE LAYER — Raw Ingestion"]
+        direction TB
+        B_INGEST["PySpark Ingester<br/><i>src/bronze/ingest.py</i>"]
+        B_META["Metadata Enrichment<br/>_batch_id, _source_state,<br/>_ingestion_timestamp, _row_number"]
+        B_STORE[("Parquet on GCS<br/>gs://bucket/bronze/suits/<br/>Partitioned: state / date")]
+
+        B_INGEST --> B_META --> B_STORE
+    end
+
+    subgraph QG1["🔍 Quality Gate 1 — Bronze→Silver"]
+        QC1_NULL["not_null(case_number)"]
+        QC1_DATE["parseable(filing_date)"]
+        QC1_STATE["valid(state_code)"]
+        QC1_PARTY["not_null(plaintiff)"]
+    end
+
+    subgraph QUARANTINE["🚫 Quarantine"]
+        Q_BRONZE["quarantine/bronze/<br/>Failed records + reason"]
+    end
+
+    subgraph SILVER["🥈 SILVER LAYER — Canonical Schema"]
+        direction TB
+        S_MAP["Field Mapping<br/>cause_nbr→case_number<br/>docket_id→case_number<br/>index_number→case_number"]
+        S_DATE["Date Standardization<br/>6 formats → ISO 8601"]
+        S_TYPE["Type Harmonization<br/>~40 state codes → 10 canonical"]
+        S_STATUS["Status Harmonization<br/>~20 state codes → 8 canonical"]
+        S_NAME["Name Normalization<br/>UPPER→Title Case<br/>Entity detection (LLC, Inc)"]
+        S_DEDUP["Deduplication<br/>By suit_id, latest wins"]
+
+        S_MAP --> S_DATE --> S_TYPE --> S_STATUS --> S_NAME --> S_DEDUP
+
+        S_SUITS[("silver_suit<br/>Partitioned by state_code")]
+        S_PARTIES[("silver_suit_party<br/>Partitioned by party_type")]
+
+        S_DEDUP --> S_SUITS
+        S_DEDUP --> S_PARTIES
+    end
+
+    subgraph QG2["🔍 Quality Gate 2 — Silver→Gold"]
+        QC2_UNIQUE["unique(suit_id)"]
+        QC2_TYPE["accepted_values(case_type)"]
+        QC2_STATUS["accepted_values(case_status)"]
+        QC2_REF["party_exists_per_suit"]
+    end
+
+    subgraph GOLD["🥇 GOLD LAYER — Consumer Best Views"]
+        direction TB
+        G_SUIT["gold_suit_best_view<br/>1 row/suit + enrichments<br/>days_open, year_filed,<br/>primary_plaintiff/defendant"]
+        G_PARTY["gold_party_best_view<br/>Cross-suit metrics<br/>is_frequent_litigant"]
+        G_STATE["gold_state_summary<br/>state × year × type<br/>suit_count, disposition_rate"]
+        G_TREND["gold_monthly_trends<br/>Filing trends<br/>rolling 3m avg, YoY %"]
+    end
+
+    subgraph BQ["🏢 BigQuery"]
+        BQ_EXT["External Tables<br/>(Parquet-backed)"]
+        BQ_MAT["Materialized Tables<br/>Partitioned by filing_date<br/>Clustered by state_code"]
+        BQ_VIEWS["Consumer Views<br/>v_suit_search<br/>v_frequent_litigants<br/>v_state_dashboard"]
+
+        BQ_EXT --> BQ_MAT --> BQ_VIEWS
+    end
+
+    subgraph CONSUMERS["📊 Consumers"]
+        CON_BI["Looker / Tableau"]
+        CON_API["REST API"]
+        CON_ML["ML Feature Store"]
+        CON_SEARCH["Due Diligence Portal"]
+    end
+
+    TX & CA & NY & FL & IL & OH --> B_INGEST
+
+    B_STORE --> QG1
+    QG1 -->|PASS ≥95%| S_MAP
+    QG1 -->|FAIL| Q_BRONZE
+
+    S_SUITS & S_PARTIES --> QG2
+    QG2 -->|PASS ≥98%| G_SUIT & G_PARTY & G_STATE & G_TREND
+
+    G_SUIT & G_PARTY & G_STATE & G_TREND --> BQ_EXT
+
+    BQ_VIEWS --> CON_BI & CON_API & CON_ML & CON_SEARCH
+
+    style SOURCES fill:#0c1a3d,stroke:#1e3a6e,color:#60a5fa
+    style BRONZE fill:#451a03,stroke:#d97706,color:#fbbf24
+    style QG1 fill:#064e3b,stroke:#10b981,color:#34d399
+    style QG2 fill:#064e3b,stroke:#10b981,color:#34d399
+    style QUARANTINE fill:#7f1d1d,stroke:#ef4444,color:#fca5a5
+    style SILVER fill:#1e293b,stroke:#64748b,color:#e2e8f0
+    style GOLD fill:#422006,stroke:#eab308,color:#fef08a
+    style BQ fill:#1a2236,stroke:#3b82f6,color:#93c5fd
+    style CONSUMERS fill:#2e1065,stroke:#7c3aed,color:#c4b5fd

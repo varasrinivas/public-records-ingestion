@@ -1,0 +1,83 @@
+---
+title: US Suits Pipeline — Entity Relationship Diagram
+---
+erDiagram
+    silver_suit {
+        string suit_id PK "state_county_case_number"
+        string state_code "TX CA NY FL IL OH"
+        string county "Normalized county name"
+        string case_number "State-native case number"
+        string case_type "CIVIL FAMILY CRIMINAL etc"
+        string case_type_raw "Original state code"
+        date filing_date "ISO 8601"
+        string case_status "OPEN DISPOSED DISMISSED etc"
+        string case_status_raw "Original state status"
+        string court_name "Court name"
+        string judge_name "Title Case"
+        string cause_of_action "Legal basis"
+        decimal amount_demanded "Dollar amount if available"
+        string disposition "Settlement Judgment etc"
+        date disposition_date "ISO 8601"
+        string _bronze_batch_id "FK Lineage to Bronze"
+        timestamp _silver_processed_at "Transform timestamp"
+        string _silver_version "Schema version"
+    }
+
+    silver_suit_party {
+        string party_id PK "suit_id_type_sequence"
+        string suit_id FK "FK to silver_suit"
+        string party_type "PLAINTIFF or DEFENDANT"
+        string party_name "Normalized name"
+        string party_name_raw "Original name from source"
+        boolean is_entity "LLC Inc Corp detection"
+        string attorney_name "Representing attorney"
+        string attorney_firm "Law firm name"
+    }
+
+    gold_suit_best_view {
+        string suit_id PK "From silver_suit"
+        string state_code "Partition column"
+        string case_type "Cluster column"
+        integer year_filed "Extracted from filing_date"
+        integer days_open "filing to disposition or today"
+        string primary_plaintiff "First listed plaintiff"
+        string primary_defendant "First listed defendant"
+        integer plaintiff_count "Total plaintiff parties"
+        integer defendant_count "Total defendant parties"
+        timestamp _gold_refreshed_at "Refresh timestamp"
+    }
+
+    gold_party_best_view {
+        string party_name "Normalized party name"
+        boolean is_entity "Corp or individual"
+        integer total_suits_as_plaintiff "Cross-suit count"
+        integer total_suits_as_defendant "Cross-suit count"
+        date first_appearance_date "Earliest filing date"
+        date last_appearance_date "Latest filing date"
+        integer total_appearances "All suits combined"
+        boolean is_frequent_litigant "10+ suits flag"
+    }
+
+    gold_state_summary {
+        string state_code "Two-letter state"
+        integer year_filed "Filing year"
+        string case_type "Canonical type"
+        integer suit_count "Total suits"
+        float avg_days_to_disposition "Average resolution time"
+        float disposition_rate "Percent disposed"
+    }
+
+    gold_monthly_trends {
+        string year_month "YYYY-MM"
+        string state_code "Two-letter state"
+        string case_type "Canonical type"
+        integer new_filings "New suits filed"
+        integer dispositions "Cases resolved"
+        float filing_trend_3m_avg "Rolling 3 month average"
+    }
+
+    silver_suit ||--o{ silver_suit_party : "has parties"
+    silver_suit ||--|| gold_suit_best_view : "enriched to"
+    silver_suit_party }o--|| gold_party_best_view : "aggregated to"
+    silver_suit }o--|| gold_state_summary : "aggregated by state/year/type"
+    silver_suit }o--|| gold_monthly_trends : "aggregated by month"
