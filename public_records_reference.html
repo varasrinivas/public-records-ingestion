@@ -1,0 +1,1161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>US Public Records — Suits, UCC, Liens, Judgments, Registrations, Bankruptcies</title>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;0,700;1,400&family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}body{background:#0b0e16;color:#c8cdd8;font-family:'DM Sans',sans-serif}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:#151a26}::-webkit-scrollbar-thumb{background:#2d3548;border-radius:4px}
+::selection{background:#3b82f620;color:#93c5fd}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}.fade-up{animation:fadeUp .35s ease both}
+</style>
+</head>
+<body><div id="root"></div>
+<script type="text/babel">
+
+const {useState}=React;
+const P={bg:"#0b0e16",surface:"#121828",raised:"#1a2035",elevated:"#212942",border:"#262f47",
+  text:"#c8cdd8",textBright:"#eef0f5",textDim:"#7d879e",textFaint:"#4a5270",
+  amber:"#f59e42",amberBg:"#1c1208",
+  cyan:"#22d3ee",cyanBg:"#082028",
+  emerald:"#34d399",emeraldBg:"#081e18",
+  rose:"#fb7185",roseBg:"#1c0e14",
+  indigo:"#818cf8",indigoBg:"#10103a",
+  sky:"#38bdf8",skyBg:"#0a1828",
+  mono:"'JetBrains Mono',monospace",serif:"'Cormorant Garamond',Georgia,serif",sans:"'DM Sans',sans-serif"};
+
+function Badge({children,color=P.amber,bg}){return React.createElement("span",{style:{display:"inline-block",padding:"2px 8px",borderRadius:4,fontSize:10,fontWeight:600,color,background:bg||color+"18"}},children)}
+function InfoBox({title,icon,color=P.amber,bg=P.amberBg,children}){return React.createElement("div",{style:{background:bg,border:`1px solid ${color}22`,borderRadius:10,padding:14,marginTop:12}},React.createElement("div",{style:{color,fontWeight:700,fontSize:13,marginBottom:6,fontFamily:P.serif}},icon+" "+title),React.createElement("div",{style:{color:color+"cc",fontSize:11,lineHeight:1.7}},children))}
+function Code({code}){return React.createElement("div",{style:{background:"#080b12",border:`1px solid ${P.border}`,borderRadius:8,padding:"10px 14px",fontFamily:P.mono,fontSize:11,lineHeight:1.7,overflowX:"auto"}},code.split("\n").map((l,i)=>React.createElement("div",{key:i,style:{color:l.trim().startsWith("#")?P.textFaint:P.textDim,whiteSpace:"pre"}},l)))}
+function DataCard({title,color,children}){return React.createElement("div",{style:{background:P.surface,border:`1px solid ${P.border}`,borderLeft:`3px solid ${color}`,borderRadius:8,padding:12,marginBottom:6}},title&&React.createElement("div",{style:{color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:6}},title),children)}
+
+/* ══════════════════════════════════════════
+   RECORD TYPE DATA
+   ══════════════════════════════════════════ */
+
+/* ──── UCC ──── */
+const UCC={
+  title:"UCC Filings",icon:"📋",color:P.cyan,
+  plain:"When a business borrows money and pledges equipment, inventory, or accounts receivable as collateral, the lender files a UCC-1 to publicly claim that collateral. Think of it as the lender putting a 'I call dibs on this' sign on the borrower's assets.",
+  rolePlayers:[
+    {role:"Debtor",icon:"🏢",plain:"The business that borrowed money and pledged its assets as collateral. Also called the borrower.",example:"Acme Manufacturing LLC (pledged its factory equipment)"},
+    {role:"Secured Party",icon:"🏦",plain:"The lender/creditor who loaned the money and now has a claim on the debtor's collateral. Gets paid first if the debtor defaults.",example:"Bank of America, N.A. (loaned $500K to Acme)"},
+    {role:"Assignee",icon:"➡️",plain:"If the original lender sells the loan to another bank, the new bank becomes the assignee. The collateral claim transfers with it.",example:"Wells Fargo acquires BofA's loan → becomes new secured party"},
+  ],
+  forms:[
+    {form:"UCC-1",name:"Financing Statement",plain:"The initial filing. Creates the public record of the lender's claim.",when:"When a new loan is made with collateral",duration:"Active for 5 years"},
+    {form:"UCC-3",name:"Amendment",plain:"Modifies the original UCC-1. Can be a continuation, termination, assignment, or change.",when:"Any change to the original filing",variants:"Continuation (extend 5 more years), Termination (loan paid off), Amendment (change collateral), Assignment (new lender)"},
+    {form:"UCC-11",name:"Information Request",plain:"Search request to find all UCC filings against a debtor. Used for due diligence.",when:"Before lending money or acquiring a company"},
+  ],
+  sampleFields:["filing_number","filing_date","filing_type","lapse_date","debtor_name","debtor_address","debtor_org_type","debtor_jurisdiction","secured_party_name","secured_party_address","collateral_description","amendment_type"],
+  fieldDetails:[
+    {field:"filing_number",type:"STRING",format:"State-specific: '2025-0012345' (TX), '2025 0123456' (DE)",required:true,notes:"Unique per state SOS. Compound key: STATE + filing_number for global uniqueness."},
+    {field:"filing_date",type:"DATE/TIMESTAMP",format:"Varies: MM/DD/YYYY, YYYY-MM-DD, some include HH:MM:SS (DE)",required:true,notes:"Timestamp matters for priority disputes — first to file wins. DE timestamps to the second."},
+    {field:"filing_type",type:"ENUM",format:"UCC-1 (initial) | UCC-3 (amendment) | UCC-5 (information statement)",required:true,notes:"UCC-3 subtypes: CONTINUATION, TERMINATION, ASSIGNMENT, AMENDMENT, PARTY_CHANGE, COLLATERAL_CHANGE."},
+    {field:"lapse_date",type:"DATE",format:"filing_date + 5 years for standard, +30 years for manufactured home",required:false,notes:"NULL for Transmitting Utility filings (never lapse). If not continued before lapse, security interest lost."},
+    {field:"debtor_name",type:"STRING",format:"Org name (box 1a) OR individual name (box 1b), NEVER both",required:true,notes:"MUST be exact legal name from formation docs. 'ACME MFG LLC' ≠ 'Acme Manufacturing, L.L.C.' — can void filing."},
+    {field:"debtor_org_type",type:"STRING",format:"LLC, CORPORATION, LP, LLP, TRUST, etc.",required:"Varies by state",notes:"NY REQUIRES org type + jurisdiction (national form rejected without it). Not all states require."},
+    {field:"debtor_jurisdiction",type:"STRING",format:"State of organization: TX, DE, CA, etc.",required:"Varies by state",notes:"Where the debtor entity was FORMED — determines where UCC is filed."},
+    {field:"secured_party_name",type:"STRING",format:"Bank name, may include 'N.A.', 'AS TRUSTEE', 'AS AGENT'",required:true,notes:"Parse role suffixes: 'AS TRUSTEE' = bank acting for securitized loan pool. 'N.A.' = National Association (federal bank)."},
+    {field:"collateral_description",type:"TEXT",format:"Free text up to 4,000 chars. Can be 'All assets' or multi-page description.",required:true,notes:"NLP required. Common categories: ACCOUNTS_RECEIVABLE, INVENTORY, EQUIPMENT, GENERAL_INTANGIBLES, ALL_ASSETS. May reference external exhibit: 'See Exhibit A.'"},
+    {field:"amendment_type",type:"ENUM",format:"CONTINUATION | TERMINATION | ASSIGNMENT | AMENDMENT | PARTY_CHANGE",required:"UCC-3 only",notes:"Only present on UCC-3 forms. One type per UCC-3 filing. Continuation must be filed in 6-month window before lapse."},
+    {field:"initial_filing_number",type:"STRING",format:"References the original UCC-1 this amendment modifies",required:"UCC-3 only",notes:"Links amendment back to parent. Build amendment chain: UCC-1 → UCC-3 → UCC-3 → ..."},
+    {field:"assignee_name",type:"STRING",format:"New secured party receiving the assignment",required:"Assignment only",notes:"Only on UCC-3 Assignment. After assignment, assignee is the new secured party of record."},
+  ],
+  dataProfile:{
+    volume:{national:"~25M active UCC filings nationwide, ~5M new filings per year",perState:"TX: ~3.5M active | CA: ~3M | NY: ~2.5M | DE: ~2M | FL: ~2M. Top 10 states hold ~70% of all filings.",perEntity:"Average business has 1-3 active UCC filings. Highly leveraged companies may have 10-30+."},
+    freshness:{updateFreq:"Most SOS systems: real-time to 24-hour delay. Bulk data feeds: weekly to monthly.",lag:"Commercial aggregators (D&B, Experian BIS): 1-7 day lag. Direct SOS scrapes: same-day for most states.",stale:"Lapsed filings remain searchable 1-2 years after lapse. Some states keep indefinitely. Always check lapse_date."},
+    completeness:[
+      {field:"filing_number",pct:100,note:"Always present — primary key"},
+      {field:"filing_date",pct:100,note:"Always present"},
+      {field:"debtor_name",pct:99,note:"Rare blanks on corrupted legacy records"},
+      {field:"secured_party_name",pct:99,note:"Essentially always present"},
+      {field:"collateral_description",pct:95,note:"~5% reference external exhibits ('See Exhibit A') with no inline text"},
+      {field:"debtor_org_type",pct:70,note:"Only required in some states (NY, CA). Optional in TX, FL, DE."},
+      {field:"debtor_jurisdiction",pct:70,note:"Same as org_type — required only in some states"},
+      {field:"lapse_date",pct:88,note:"Blank for transmitting utility filings (~2%) and some legacy records (~10%)"},
+      {field:"amendment_type",pct:40,note:"Only on UCC-3 forms (~40% of all filings). NULL on UCC-1."},
+    ],
+    distributions:[
+      {label:"Filing Type",data:"UCC-1 (Initial): ~55% | UCC-3 (Amendment): ~44% | UCC-5: <1%"},
+      {label:"Amendment Subtype",data:"Continuation: ~40% | Termination: ~30% | Assignment: ~15% | Collateral change: ~10% | Party change: ~5%"},
+      {label:"Collateral Category",data:"All Assets (blanket): ~35% | Equipment: ~20% | Accounts Receivable: ~15% | Inventory: ~12% | General Intangibles: ~8% | Other: ~10%"},
+      {label:"Secured Party Type",data:"National banks: ~45% | Regional banks: ~25% | Finance companies: ~15% | Equipment lessors: ~10% | Other: ~5%"},
+      {label:"Debtor Entity Type",data:"LLC: ~55% | Corporation: ~25% | LP/LLP: ~8% | Trust: ~5% | Individual: ~7%"},
+      {label:"Filing Status",data:"ACTIVE: ~50% | LAPSED: ~30% | TERMINATED: ~18% | ASSIGNED: ~2%"},
+    ],
+    businessRules:[
+      "PRIORITY: First to file wins. If two lenders both file UCC-1 against same debtor, the earlier filing date has priority on the collateral.",
+      "LAPSE: Filings lapse exactly 5 years after filing_date. Must file UCC-3 Continuation in the 6-month window BEFORE lapse (not after).",
+      "FILING LOCATION: File in debtor's state of ORGANIZATION (where the entity was formed), NOT where the collateral is located. DE-formed LLC → file UCC in DE.",
+      "EXACT NAME: Debtor name must be the exact legal name on the entity's formation documents. 'Acme Mfg LLC' instead of 'Acme Manufacturing LLC' can void the filing.",
+      "ONE AMENDMENT TYPE per UCC-3: A single UCC-3 cannot be both a Continuation and a Termination. Separate filings required.",
+      "TRANSMITTING UTILITY: Special designation for utilities (power, gas, telecom). Their filings NEVER lapse — no 5-year expiration.",
+      "PMSI (Purchase Money Security Interest): Lender who financed the purchase of specific equipment has SUPER-PRIORITY over blanket liens on that equipment — even if blanket was filed first.",
+    ],
+    crossLinks:[
+      {target:"Business Registration",joinKey:"debtor_name ↔ entity_name (fuzzy match) + debtor_jurisdiction ↔ formation_state",notes:"UCC must be filed under exact SOS entity name. Use SOS records as 'gold standard' for debtor name validation."},
+      {target:"Bankruptcy (Schedule D)",joinKey:"debtor_name/EIN ↔ bankruptcy debtor + secured_party_name ↔ Schedule D creditor",notes:"Every UCC-1 secured party should appear as a secured creditor in bankruptcy Schedule D. If not, they may have missed the filing deadline."},
+      {target:"Liens",joinKey:"debtor_name (fuzzy) + debtor_address",notes:"Tax liens and UCC filings against same entity = double financial stress. UCC secured parties have priority over unsecured tax liens in most cases."},
+      {target:"Judgments",joinKey:"debtor_name (fuzzy) ↔ judgment_debtor",notes:"Judgment creditor may file UCC to perfect their lien. Judgment liens are typically subordinate to earlier UCC filings."},
+      {target:"Suits",joinKey:"debtor_name/secured_party_name ↔ plaintiff/defendant",notes:"Lender (secured party) may sue debtor for default. Suit leads to judgment → can trigger bankruptcy → Schedule D references back to UCC."},
+    ],
+  },
+  sampleRecord:'Filing Number: 2025-0012345-6\nFiling Date: 2025-01-15\nFiling Type: UCC-1 (Initial)\nLapse Date: 2030-01-15\nDebtor: Acme Manufacturing LLC\n  123 Industrial Blvd, Houston TX 77001\n  Org Type: LLC | Jurisdiction: TX\nSecured Party: Bank of America, N.A.\n  100 N Tryon St, Charlotte NC 28255\nCollateral: All inventory, equipment, accounts\n  receivable, and general intangibles, whether\n  now owned or hereafter acquired',
+  dataSources:["Secretary of State (all 50 states)","Some counties for fixture filings","Commercial aggregators: Dun & Bradstreet, Experian BIS, LexisNexis"],
+  devNotes:["Filed with Secretary of State in debtor's state of organization (not collateral location)","Lapses after 5 YEARS if not continued — lapsed filings still searchable for 1 year","Collateral description is FREE TEXT (up to 4000 chars) — requires NLP to categorize","'All assets' is a valid collateral description — means everything the company owns","Each state has its own filing system and search interface","Debtor name must be EXACT legal name — even small variations can void the filing"],
+  dirtyData:[
+    {raw:'Debtor: "ACME MANUFACTURING, L.L.C."',issue:"L.L.C. vs LLC — periods in entity suffix",rule:"Normalize: strip periods from entity suffixes"},
+    {raw:'Collateral: "See Exhibit A attached hereto"',issue:"Collateral references external document not in data feed",rule:"Flag as collateral_type='EXTERNAL_REFERENCE', store as-is"},
+    {raw:'Lapse Date: 2020-01-15 (LAPSED)',issue:"Filing has lapsed — no longer active",rule:"Set status='LAPSED'. Still ingest for historical record."},
+  ],
+  keyTerms:[
+    {term:"Perfection",plain:"Making a security interest 'official' by filing the UCC-1. Without perfection, a lender might lose their claim on the collateral to another creditor. Think of it as 'calling dibs' in a legally binding way."},
+    {term:"Priority",plain:"When multiple lenders have filed UCC claims against the same company, who gets paid first? The one who filed FIRST wins. It's a 'first come, first served' rule. That's why lenders rush to file."},
+    {term:"Blanket Lien",plain:"When the collateral description says 'all assets' — the lender has a claim on EVERYTHING the business owns. Equipment, inventory, cash, intellectual property, the lot. Very common in bank loans."},
+    {term:"Lapse",plain:"A UCC filing expires after exactly 5 years. If the lender forgets to renew (file a Continuation), their security interest vanishes — poof. Like a driver's license that expires if you don't renew it."},
+    {term:"Continuation",plain:"A renewal filed in the 6-month window BEFORE the 5-year lapse. Extends the filing for another 5 years. Miss this window = start over with a brand new UCC-1."},
+    {term:"PMSI (Purchase Money Security Interest)",plain:"A special type of security interest where the lender specifically financed the purchase of the collateral. Example: a bank loans money to buy a truck AND takes a security interest in that same truck. Gets SUPER-PRIORITY over blanket liens."},
+    {term:"Transmitting Utility",plain:"Power companies, gas companies, telecom companies. Their UCC filings NEVER expire — no 5-year lapse. Special rule because their collateral (pipelines, cables) is permanent infrastructure."},
+    {term:"Collateral Description",plain:"The free-text box on the UCC-1 that describes what the lender has a claim on. Can be very specific ('2024 Caterpillar Excavator S/N 12345') or very broad ('all assets'). This is the hardest field to process because it's unstructured text."},
+    {term:"Assignment",plain:"When Lender A sells the loan to Lender B, they file a UCC-3 Assignment. The collateral claim transfers to the new lender. Common when loans are packaged and sold on secondary markets."},
+    {term:"Termination",plain:"Filed when the loan is paid off. The lender is REQUIRED to file this within 20 days of payoff. Removes their claim on the collateral. But the filing record stays in the database forever."},
+  ],
+  criticalFields:[
+    {field:"filing_number + state",why:"The unique ID. A filing number alone is NOT unique nationally — you need state + number together. This is your primary key.",rank:1},
+    {field:"debtor_name",why:"Who owes the money. Must be the EXACT legal name from formation documents. Even 'Acme Mfg' vs 'Acme Manufacturing' matters — the wrong name can make the filing legally invalid.",rank:2},
+    {field:"secured_party_name",why:"Who is owed the money — the lender. If it says 'AS TRUSTEE' or 'AS AGENT', the actual money came from a pool of investors (securitized loan). Important for understanding who really controls the debt.",rank:3},
+    {field:"collateral_description",why:"What assets are pledged. 'All assets' = blanket lien = the lender has a claim on everything. Specific equipment descriptions = narrower claim. This field drives risk assessment.",rank:4},
+    {field:"lapse_date",why:"When does the filing expire? If it's past the lapse date and no continuation was filed, the security interest is GONE. Active vs lapsed is the #1 filter for current financial exposure.",rank:5},
+    {field:"filing_type + amendment_type",why:"Is this the original loan (UCC-1) or a change (UCC-3)? If UCC-3, what kind? Termination = loan paid off. Continuation = renewed. Assignment = new lender. This tells you the story of the debt over time.",rank:6},
+  ],
+};
+
+/* ──── LIENS ──── */
+const LIENS={
+  title:"Tax Liens",icon:"🔒",color:P.rose,
+  plain:"When a business doesn't pay its taxes, the government places a lien on the company's property. This is a public 'you owe us' that tells everyone the IRS or state has a claim. The company can't sell or refinance property until the lien is resolved.",
+  rolePlayers:[
+    {role:"Lienor / Lienholder",icon:"🏛️",plain:"The government entity that placed the lien. Usually IRS (federal) or state tax authority.",example:"Internal Revenue Service (IRS) — federal tax lien"},
+    {role:"Taxpayer / Debtor",icon:"🏢",plain:"The business that owes taxes. The lien attaches to ALL their property — real estate, vehicles, financial assets.",example:"Acme Manufacturing LLC — owes $125,000 in payroll taxes"},
+  ],
+  types:[
+    {type:"Federal Tax Lien",plain:"Filed by IRS for unpaid federal taxes. Filed with county recorder AND Secretary of State.",filed:"County + SOS",amount:"Unlimited — can be millions",duration:"10 years from assessment date, can be refiled"},
+    {type:"State Tax Lien",plain:"Filed by state tax authority for unpaid state income, sales, or payroll taxes.",filed:"County recorder or SOS (varies by state)",amount:"Varies",duration:"Varies by state: 5-20 years"},
+    {type:"Mechanics Lien",plain:"Filed by contractors/suppliers who weren't paid for work on a property. Not a tax lien but common in business.",filed:"County recorder",amount:"Cost of work/materials",duration:"Varies: 60 days to 2 years to enforce"},
+    {type:"Judgment Lien",plain:"Created when a court judgment is recorded against a company's property. Links to the Judgments record type.",filed:"County recorder",amount:"Judgment amount",duration:"5-20 years depending on state"},
+  ],
+  sampleFields:["lien_number","filing_date","lien_type","debtor_name","debtor_ein","debtor_address","lienholder","amount","tax_type","tax_period","property_description","release_date","lien_status"],
+  fieldDetails:[
+    {field:"lien_number",type:"STRING",format:"State/IRS-assigned: 'FTL-2025-00789' or serial number",required:true,notes:"Federal liens use IRS serial number (SLID). State liens vary by jurisdiction. County-recorded liens use book/page."},
+    {field:"filing_date",type:"DATE",format:"MM/DD/YYYY or YYYY-MM-DD",required:true,notes:"For federal liens, filing date ≠ assessment date. Lien 'relates back' to assessment date for priority purposes."},
+    {field:"lien_type",type:"ENUM",format:"FEDERAL_TAX | STATE_TAX | MECHANICS | JUDGMENT | HOSPITAL | OTHER",required:true,notes:"Federal = IRS Form 668(Y)(c). State varies. Mechanics liens are property-specific. Judgment liens created by recording Abstract of Judgment."},
+    {field:"debtor_name",type:"STRING",format:"Business entity name or individual name",required:true,notes:"Federal liens use taxpayer name from IRS records. May differ from SOS registered name. DBA names sometimes embedded."},
+    {field:"debtor_ein",type:"STRING",format:"XX-XXXXXXX (9 digits with hyphen after 2nd digit)",required:"Federal liens",notes:"EIN = Employer Identification Number. Primary linking key to business entity. Individuals use SSN (redacted in public records)."},
+    {field:"lienholder",type:"STRING",format:"'Internal Revenue Service', state tax authority name, contractor name",required:true,notes:"For federal liens always 'Internal Revenue Service' or 'United States'. For mechanics liens = claimant contractor/supplier."},
+    {field:"amount",type:"DECIMAL",format:"Dollar amount: $125,432.67. May include $ sign, commas.",required:true,notes:"Federal lien amount = balance at TIME OF FILING. Actual current balance higher due to accruing penalties/interest. Mechanics lien = cost of work."},
+    {field:"tax_type",type:"ENUM",format:"941 (Payroll) | 1120 (Corp Income) | 940 (FUTA) | 720 (Excise)",required:"Tax liens only",notes:"IRS form number identifies tax type. 941 (payroll tax) is most common for businesses. Multiple periods can be on one lien."},
+    {field:"tax_period",type:"DATE",format:"Period ending date: 12/31/2024 or quarter: Q3 2024",required:"Tax liens only",notes:"May be formatted as MMDDYYYY without separators ('12312024'). Multiple periods possible on one NFTL."},
+    {field:"property_description",type:"TEXT",format:"'All property and rights to property' (federal) OR legal description (mechanics)",required:false,notes:"Federal liens = blanket (all property). Mechanics liens = specific real property with legal description (lot, block, subdivision)."},
+    {field:"release_date",type:"DATE",format:"MM/DD/YYYY or NULL if still active",required:false,notes:"Federal: IRS Form 668-Z filed within 30 days of full payment. Release ≠ Withdrawal. Release leaves record; Withdrawal removes it entirely."},
+    {field:"lien_status",type:"ENUM",format:"ACTIVE | RELEASED | WITHDRAWN | EXPIRED | REFILED",required:true,notes:"ACTIVE = still enforceable. RELEASED = debt paid. WITHDRAWN = as if never filed. EXPIRED = past 10-year statute. REFILED = extended for another period."},
+    {field:"assessment_date",type:"DATE",format:"Date IRS assessed the tax liability",required:"Federal liens",notes:"CRITICAL for priority. Federal lien priority dates to assessment, not filing. Found on Form 668(Y)(c). Last Day for Refiling is 10 years from this date."},
+  ],
+  dataProfile:{
+    volume:{national:"~12M active tax liens nationwide. ~2M+ mechanics liens filed annually. Federal tax liens: ~500K new NFTL filings per year.",perState:"CA: ~1.5M active | NY: ~1.2M | TX: ~900K | FL: ~800K | IL: ~700K. Varies heavily by economic conditions.",perEntity:"Most businesses have 0 liens. A company in financial distress may have 3-10+ concurrent liens (federal + state + mechanics)."},
+    freshness:{updateFreq:"County recorder: real-time to 48-hour delay. IRS NFTL filings: filed within 10 days of assessment. State tax liens: 30-90 days after assessment.",lag:"Commercial data: 7-30 day lag from county recorder. Direct county feeds: 1-3 days. IRS lien data not centrally available — must scrape 3,000+ counties.",stale:"Released liens remain in public record PERMANENTLY. Amount shown is stale — reflects balance at TIME OF FILING, not current balance with penalties/interest."},
+    completeness:[
+      {field:"lien_number",pct:100,note:"Always present — primary key from filing office"},
+      {field:"filing_date",pct:100,note:"Always present"},
+      {field:"lien_type",pct:95,note:"Usually clear. ~5% are 'OTHER' or blank — infer from lienholder name"},
+      {field:"debtor_name",pct:99,note:"Almost always present"},
+      {field:"debtor_ein",pct:75,note:"Present on ~95% of federal liens. Rare on state liens. Never on mechanics liens."},
+      {field:"lienholder",pct:98,note:"'Internal Revenue Service' for NFTL. State agency name for state liens. Contractor name for mechanics."},
+      {field:"amount",pct:90,note:"~10% are $0 (protective filings, admin errors). Mechanics liens sometimes list 'estimated'."},
+      {field:"tax_type",pct:60,note:"Only on tax liens. 941 (payroll) most common. May list multiple tax types on one NFTL."},
+      {field:"release_date",pct:35,note:"Only ~35% of liens are released. Rest are active, expired, or abandoned."},
+      {field:"assessment_date",pct:70,note:"Only on federal liens (Form 668). Critical for priority — often missing from commercial feeds."},
+    ],
+    distributions:[
+      {label:"Lien Type",data:"Federal Tax Lien: ~35% | State Tax Lien: ~30% | Mechanics Lien: ~25% | Judgment Lien: ~8% | Hospital/Other: ~2%"},
+      {label:"Federal Tax Type",data:"Form 941 (Payroll): ~55% | Form 1120 (Corp Income): ~20% | Form 940 (FUTA): ~10% | Form 720 (Excise): ~5% | Other: ~10%"},
+      {label:"Lien Status",data:"ACTIVE: ~45% | RELEASED: ~25% | EXPIRED: ~20% | REFILED: ~5% | WITHDRAWN: ~5%"},
+      {label:"Amount Range",data:"Under $25K: ~40% | $25K-$100K: ~25% | $100K-$500K: ~20% | $500K-$1M: ~8% | Over $1M: ~7%"},
+      {label:"Duration (Active Liens)",data:"Under 1 year: ~20% | 1-3 years: ~35% | 3-7 years: ~25% | 7-10 years: ~15% | Over 10 years (refiled): ~5%"},
+    ],
+    businessRules:[
+      "DUAL FILING: Federal tax liens must be filed in BOTH county recorder AND Secretary of State. Check both sources — missing one means incomplete data.",
+      "10-YEAR STATUTE: IRS has 10 years from ASSESSMENT DATE (not filing date) to collect. After 10 years, lien expires unless refiled. Refiling starts a new 10-year period.",
+      "RELEASE vs WITHDRAWAL: Release = debt paid, but filing record stays. Withdrawal = IRS removes the public notice entirely (as if never filed). Withdrawal is much rarer.",
+      "SUBORDINATION: IRS can agree to let another creditor's lien take priority (e.g., so the business can refinance). Subordination agreement is a separate filing.",
+      "AMOUNT IS STALE: The amount on the NFTL is the balance at TIME OF FILING. Actual current balance is higher due to accruing penalties (25%+) and interest (7-8%/yr).",
+      "MECHANICS LIEN DEADLINES: Must be filed within strict deadlines (30-90 days after last work, varies by state). Preliminary notice often required. Miss the deadline = lien invalid.",
+      "ASSESSMENT DATE PRIORITY: Federal tax lien priority dates back to the ASSESSMENT date, not the filing date. A lien assessed in January but filed in June still has January priority.",
+    ],
+    crossLinks:[
+      {target:"Bankruptcy",joinKey:"debtor_ein ↔ bankruptcy debtor EIN",notes:"Tax liens become PRIORITY claims in bankruptcy — paid before general unsecured. Lien survives bankruptcy in many cases. IRS files Proof of Claim."},
+      {target:"Business Registration",joinKey:"debtor_name (fuzzy) ↔ entity_name + debtor_ein ↔ EIN",notes:"State tax liens can trigger SOS status change to 'SUSPENDED' or 'FORFEITED'. CA Franchise Tax Board suspension is separate from SOS dissolution."},
+      {target:"Judgments",joinKey:"Judgment liens created by recording Abstract of Judgment at county",notes:"A court judgment becomes a judgment lien when recorded. Links via case_number → judgment → abstract → lien."},
+      {target:"UCC Filings",joinKey:"debtor_name (fuzzy)",notes:"Tax lien vs UCC priority depends on timing. UCC filed BEFORE tax lien assessment = UCC has priority on that specific collateral."},
+      {target:"Suits",joinKey:"debtor_name (fuzzy) ↔ defendant_name",notes:"IRS can file suit to enforce collection if administrative efforts fail. Mechanics lien must be enforced by lawsuit within deadline."},
+    ],
+  },
+  sampleRecord:'Lien Number: FTL-2025-00789\nFiling Date: 2025-02-01\nType: Federal Tax Lien\nDebtor: Acme Manufacturing LLC\n  EIN: 12-3456789\n  123 Industrial Blvd, Houston TX\nLienholder: Internal Revenue Service\nAmount: $125,432.00\nProperty: All property and rights to property\nStatus: ACTIVE\nRelease Date: (none)',
+  devNotes:["Federal tax liens filed in BOTH county AND state — check both sources","IRS uses EIN (Employer ID Number) as company identifier — map to entity","Lien RELEASE means the tax was paid — but the filing record persists","Some states file liens with SOS (searchable online), others only county recorder","Amount can increase with penalties and interest — original amount may differ from current","Mechanics liens are property-specific; tax liens attach to ALL property"],
+  dirtyData:[
+    {raw:'Amount: "$0.00"',issue:"Zero-dollar lien — usually a filing error or placeholder",rule:"Flag as WARN, don't quarantine — some states file $0 liens for administrative reasons"},
+    {raw:'Debtor: "ACME MFG LLC DBA ACME PRODUCTS"',issue:"DBA (doing business as) name embedded in debtor field",rule:"Parse: split on 'DBA'/'D/B/A'/'AKA', store business_name and dba_name separately"},
+  ],
+  keyTerms:[
+    {term:"NFTL (Notice of Federal Tax Lien)",plain:"The official IRS form (668(Y)(c)) that tells the world 'this company owes us taxes.' It's filed at the county courthouse and/or Secretary of State. Think of it as the IRS posting a public notice saying 'we have dibs on this company's stuff.'"},
+    {term:"Assessment Date",plain:"The date the IRS officially decided 'you owe us $X.' This is NOT the filing date — the lien actually 'relates back' to this date for priority. So even if the IRS files the lien months later, their claim is backdated. Sneaky but legal."},
+    {term:"Release vs Withdrawal",plain:"Release = the tax was paid, but the filing record stays in the public record forever (like a paid-off collection on a credit report). Withdrawal = the IRS REMOVES the public notice entirely, as if it was never filed. Withdrawal is much rarer and more favorable."},
+    {term:"Subordination",plain:"The IRS agrees to let another creditor 'cut in line' ahead of them. Why? Usually so the business can refinance or get a new loan (which ultimately helps the IRS get paid). It's the IRS being practical."},
+    {term:"Mechanics Lien",plain:"A contractor or supplier who didn't get paid for work on a building can file a lien on that specific property. It literally means 'I worked on your building, you didn't pay me, so I have a claim on the building.' Very different from tax liens."},
+    {term:"Judgment Lien",plain:"When someone wins a lawsuit and the court says 'you owe $250K,' the winner can record that judgment at the county recorder. This creates a lien on ALL the loser's real estate in that county. It's how lawsuit winners secure their money."},
+    {term:"EIN (Employer Identification Number)",plain:"A 9-digit tax ID number (like XX-XXXXXXX) that the IRS assigns to every business. This is the #1 way to link tax lien data to other business records. It's the closest thing to a universal business identifier."},
+    {term:"10-Year Collection Statute",plain:"The IRS has exactly 10 years from the ASSESSMENT DATE to collect the tax. After that, the lien expires. But they can refile to start a new 10-year clock. So liens can theoretically last 20+ years."},
+  ],
+  criticalFields:[
+    {field:"lien_type",why:"Federal tax, state tax, mechanics, or judgment? Each type has completely different rules, durations, sources, and priority. This is the #1 field for routing and classification.",rank:1},
+    {field:"debtor_name + debtor_ein",why:"Who owes the tax? The EIN is the golden linking key — it connects tax liens to business registrations, SEC filings, and bankruptcy records. Without EIN, you're stuck with fuzzy name matching.",rank:2},
+    {field:"amount",why:"How much is owed. BUT remember: for federal liens, this is the amount at TIME OF FILING. The actual current balance is higher (penalties + interest). Still, it's the best indicator of financial severity.",rank:3},
+    {field:"lien_status",why:"ACTIVE = still enforceable. RELEASED = debt paid. WITHDRAWN = removed entirely. EXPIRED = past 10-year statute. This is how you filter for CURRENT financial risk vs historical records.",rank:4},
+    {field:"filing_date + assessment_date",why:"Filing date is when the public record was created. Assessment date (federal liens only) is when the IRS decided 'you owe us' — and this is the date that determines PRIORITY over other creditors.",rank:5},
+    {field:"lienholder",why:"'Internal Revenue Service' = federal (most serious). State tax authority = state tax. A contractor name = mechanics lien. The lienholder tells you the nature and severity of the claim.",rank:6},
+  ],
+};
+
+/* ──── JUDGMENTS ──── */
+const JUDGMENTS={
+  title:"Judgments",icon:"🔨",color:P.amber,
+  plain:"When a court rules that a business owes money, that ruling is called a judgment. It's the court's official 'you lost, pay up.' Judgments are public records that show up in credit checks and due diligence.",
+  rolePlayers:[
+    {role:"Judgment Creditor",icon:"👤",plain:"The winner — the person or company that the court said is owed money.",example:"First National Bank — won a breach of contract case"},
+    {role:"Judgment Debtor",icon:"🎯",plain:"The loser — the business that the court ordered to pay. This shows up on their public record.",example:"Acme Manufacturing LLC — ordered to pay $250,000"},
+    {role:"Court",icon:"⚖️",plain:"The court that issued the judgment. Could be state court, federal court, or even small claims.",example:"Harris County District Court, 11th Judicial District"},
+  ],
+  types:[
+    {type:"Money Judgment",plain:"Court orders defendant to pay a specific dollar amount. Most common type.",amount:"Specific $ amount",example:"Defendant shall pay $250,000 plus 6% interest"},
+    {type:"Default Judgment",plain:"Defendant never responded to the lawsuit, so the court ruled for the plaintiff automatically.",amount:"Amount claimed by plaintiff",example:"Defendant failed to appear — judgment for plaintiff"},
+    {type:"Consent Judgment",plain:"Both parties agreed to the judgment terms. Essentially a court-approved settlement.",amount:"Negotiated amount",example:"Parties consent to judgment of $100,000 payable in 12 installments"},
+    {type:"Summary Judgment",plain:"Court decided the case without a full trial because the facts were clear enough.",amount:"Varies",example:"No genuine dispute of material fact — judgment for plaintiff"},
+    {type:"Confession of Judgment",plain:"Debtor ADMITS they owe and consents to judgment in advance. Common in commercial loans.",amount:"Loan amount + fees",example:"Debtor confesses judgment for principal + attorney fees per loan agreement"},
+  ],
+  sampleFields:["judgment_number","case_number","court","filing_date","judgment_date","judgment_type","judgment_creditor","judgment_debtor","amount","interest_rate","attorney_fees","costs","satisfaction_date","status"],
+  fieldDetails:[
+    {field:"judgment_number",type:"STRING",format:"Court-assigned: 'J-2025-001234' or abstract recording number",required:true,notes:"Abstract of Judgment has SEPARATE recording number when recorded at county. Link via case_number."},
+    {field:"case_number",type:"STRING",format:"Court case ID: '2024-CV-00042' (state) or '1:25-cv-01234' (federal)",required:true,notes:"CRITICAL linking field: suit.case_number → judgment.case_number → lien.case_number. This is how the pipeline connects."},
+    {field:"court",type:"STRING",format:"'Harris County District Court', 'S.D.N.Y.', '11th Circuit'",required:true,notes:"State courts use county + court type. Federal use district abbreviation. Appellate courts reverse or affirm."},
+    {field:"filing_date",type:"DATE",format:"Date judgment was RECORDED with the court clerk",required:true,notes:"Filing date may differ from judgment date. Filing = when it becomes public record. Judgment = when judge ruled."},
+    {field:"judgment_date",type:"DATE",format:"Date the judge actually entered the judgment/order",required:true,notes:"Interest accrues from THIS date, not filing date. Statute of limitations for renewal runs from this date."},
+    {field:"judgment_type",type:"ENUM",format:"MONEY | DEFAULT | CONSENT | SUMMARY | CONFESSION | DECLARATORY",required:true,notes:"DEFAULT = defendant never responded (auto-win for plaintiff). CONSENT = settlement approved by court. CONFESSION = pre-agreed in loan docs."},
+    {field:"judgment_creditor",type:"STRING",format:"Winning party name — the one owed money",required:true,notes:"Usually the plaintiff, but defendant wins on counterclaim → defendant becomes judgment creditor. Entity resolution needed."},
+    {field:"judgment_debtor",type:"STRING",format:"Losing party name — the one ordered to pay",required:true,notes:"This is the company at financial risk. Multiple debtors possible (joint and several liability)."},
+    {field:"amount",type:"DECIMAL",format:"$250,000.00. May include 'plus costs' or 'plus attorney fees'.",required:"Money judgments",notes:"Base amount only. Interest, fees, costs may be stated separately or as 'plus reasonable attorney fees TBD.' Non-monetary judgments (injunctions) have no amount."},
+    {field:"interest_rate",type:"DECIMAL/STRING",format:"'6.00% per annum' or statutory rate reference",required:false,notes:"Post-judgment interest accrues automatically. Rate may be statutory (varies by state) or contract rate. TX=5%, CA=10%, NY=9%, Federal=T-bill+1%."},
+    {field:"satisfaction_date",type:"DATE",format:"Date creditor filed Satisfaction of Judgment, or NULL",required:false,notes:"NULL = UNSATISFIED (still owed). Date present = SATISFIED (paid in full). Partial satisfaction shows amount paid."},
+    {field:"status",type:"ENUM",format:"UNSATISFIED | SATISFIED | PARTIALLY_SATISFIED | VACATED | RENEWED | APPEALED",required:true,notes:"VACATED = judgment overturned. RENEWED = extended before expiration. APPEALED = under review by higher court (may be stayed)."},
+    {field:"book_page",type:"STRING",format:"'2025/00123' — county recorder book and page reference",required:"Recorded judgments",notes:"Only for judgments recorded as liens. Abstract of Judgment creates a lien on real property in that county."},
+  ],
+  dataProfile:{
+    volume:{national:"~8M active judgments nationwide. ~2.5M new civil judgments entered per year across state and federal courts.",perState:"CA: ~1.2M active | TX: ~900K | NY: ~800K | FL: ~750K | IL: ~500K. Varies by court system and filing requirements.",perEntity:"Most businesses have 0 judgments. Companies in financial distress may accumulate 5-20+ concurrent unsatisfied judgments."},
+    freshness:{updateFreq:"State courts: 1-5 day delay after entry. Federal courts (PACER): same-day. County recorder (abstracts): 1-7 days.",lag:"Commercial aggregators: 7-30 day lag. State court direct feeds: 1-3 days. Satisfaction filings can lag months — creditor has no deadline to file satisfaction.",stale:"UNSATISFIED judgments may actually be paid but creditor never filed Satisfaction of Judgment. ~15% of 'UNSATISFIED' judgments are actually paid."},
+    completeness:[
+      {field:"judgment_number",pct:100,note:"Always present — court-assigned"},
+      {field:"case_number",pct:95,note:"Links to originating suit. ~5% missing on very old records or standalone judgment filings"},
+      {field:"judgment_date",pct:98,note:"Rarely missing. May differ from filing_date by days to weeks"},
+      {field:"judgment_type",pct:85,note:"~15% coded as 'OTHER' or blank — infer from amount and disposition text"},
+      {field:"judgment_creditor",pct:99,note:"Almost always present"},
+      {field:"judgment_debtor",pct:99,note:"Almost always present"},
+      {field:"amount",pct:80,note:"~20% have no amount: injunctions, declaratory judgments, dismissed cases, or confidential settlements"},
+      {field:"interest_rate",pct:60,note:"Often statutory default rate. ~40% not explicitly stated — use state statutory rate"},
+      {field:"satisfaction_date",pct:35,note:"Only ~35% of judgments have satisfaction filed. Many paid but never formally satisfied."},
+      {field:"court",pct:100,note:"Always present — identifies the court"},
+    ],
+    distributions:[
+      {label:"Judgment Type",data:"Money Judgment: ~60% | Default Judgment: ~20% | Consent/Settled: ~10% | Summary Judgment: ~5% | Confession: ~3% | Other: ~2%"},
+      {label:"Status",data:"UNSATISFIED: ~55% | SATISFIED: ~25% | PARTIALLY_SATISFIED: ~5% | VACATED: ~5% | RENEWED: ~5% | APPEALED: ~5%"},
+      {label:"Amount Range",data:"Under $10K: ~25% | $10K-$50K: ~25% | $50K-$250K: ~25% | $250K-$1M: ~15% | Over $1M: ~10%"},
+      {label:"Time to Satisfy",data:"Under 6 months: ~30% | 6-12 months: ~20% | 1-3 years: ~25% | 3-10 years: ~15% | Never (abandoned): ~10%"},
+      {label:"Origin",data:"State court: ~85% | Federal court: ~12% | Small claims: ~3%"},
+    ],
+    businessRules:[
+      "INTEREST ACCRUES: Post-judgment interest accrues automatically from judgment_date. Rate is statutory by state: TX=5%, CA=10%, NY=9%, FL=varies, Federal=T-bill+1%. Actual owed = amount × (1 + rate × years).",
+      "RENEWAL: Judgments expire if not renewed. Period varies: TX=10yr, CA=10yr, NY=20yr, FL=20yr. Must be renewed BEFORE expiration — cannot revive after it expires.",
+      "ABSTRACT OF JUDGMENT: To create a LIEN on real property, creditor must record an Abstract of Judgment with the county recorder. This is a separate document from the judgment itself.",
+      "FOREIGN JUDGMENT: A judgment from State A can be 'domesticated' in State B under the Uniform Enforcement of Foreign Judgments Act (UEFJA). Same judgment appears in two states.",
+      "DEFAULT JUDGMENT: If defendant never responds to the lawsuit, court enters default judgment for the full amount claimed. ~20% of all judgments. Often indicates the defendant has disappeared or is insolvent.",
+      "SATISFACTION: When judgment is paid, creditor files Satisfaction of Judgment. BUT there's no legal deadline in most states. ~15% of paid judgments show as UNSATISFIED because creditor never filed the paper.",
+      "JOINT AND SEVERAL: If judgment is against multiple defendants, each defendant is liable for the FULL amount. Creditor can collect 100% from any one defendant.",
+    ],
+    crossLinks:[
+      {target:"Suits",joinKey:"case_number ↔ suit case_number",notes:"Judgment is the OUTCOME of a suit. 1:1 relationship (one suit → one final judgment). Case number is the direct linking key."},
+      {target:"Liens",joinKey:"Abstract of Judgment → county recorder filing. judgment_number ↔ lien filing reference",notes:"Judgment becomes a lien only when Abstract is RECORDED. The judgment itself is entered by the court; the lien is created at the county recorder."},
+      {target:"Bankruptcy",joinKey:"judgment_debtor (fuzzy) ↔ bankruptcy debtor + amount ↔ Proof of Claim",notes:"Unsatisfied judgments become unsecured claims in bankruptcy. Creditor files Proof of Claim referencing the judgment. Automatic stay freezes all collection."},
+      {target:"Business Registration",joinKey:"judgment_debtor (fuzzy) ↔ entity_name",notes:"Multiple unsatisfied judgments = entity may be approaching insolvency. Cross-reference with SOS status."},
+      {target:"UCC Filings",joinKey:"judgment_creditor/debtor (fuzzy) ↔ secured_party/debtor",notes:"Judgment creditor may file UCC as additional security. Existing UCC secured parties have priority over judgment liens in most cases."},
+    ],
+  },
+  sampleRecord:'Judgment Number: J-2025-001234\nCase Number: 2024-CV-00042\nFiling Date: 2025-01-20\nJudgment Date: 2025-01-15\nType: Money Judgment\nCreditor: First National Bank, N.A.\nDebtor: Acme Manufacturing LLC\nAmount: $250,000.00\nInterest: 6% per annum from judgment date\nCourt: Harris County District Court\nSatisfaction: (none)\nStatus: UNSATISFIED',
+  devNotes:["Judgment links to a SUIT via case_number — join suits and judgments pipelines","SATISFIED = paid in full. UNSATISFIED = still owed. PARTIALLY_SATISFIED = partial payment","Interest accrues from judgment date — total owed grows over time","Judgment can be RENEWED before expiration (5-20 years by state)","Abstract of Judgment = recorded with county to create a lien on real property","Foreign judgment = judgment from another state, domesticated locally"],
+  dirtyData:[
+    {raw:'Amount: "$250,000.00 plus costs and attorney fees"',issue:"Text appended to amount",rule:"Regex extract numeric portion, store remainder as judgment_notes"},
+    {raw:'Status: "PARTIALLY SATISFIED - $100,000 paid 03/15/2025"',issue:"Payment details embedded in status field",rule:"Parse: status='PARTIALLY_SATISFIED', paid_amount=100000, paid_date='2025-03-15'"},
+  ],
+  keyTerms:[
+    {term:"Judgment",plain:"A court's official final decision. When the judge says 'Company A owes Company B $250,000' — that's a judgment. It's legally binding and becomes a public record. The losing side must pay."},
+    {term:"Default Judgment",plain:"When the defendant completely ignores the lawsuit — doesn't respond, doesn't show up — the court automatically rules in the plaintiff's favor for everything they asked for. About 20% of all judgments. Often means the defendant has given up or gone out of business."},
+    {term:"Satisfaction of Judgment",plain:"The paperwork filed with the court that says 'they paid what they owe.' Like getting a receipt. The tricky part: there's no legal deadline to file this, so about 15% of judgments that are ACTUALLY PAID still show as 'unsatisfied' in the records."},
+    {term:"Abstract of Judgment",plain:"When the winner takes the judgment to the county recorder's office and records it. This CREATES A LIEN on all the loser's real estate in that county. It's how a court judgment turns into a property claim."},
+    {term:"Writ of Execution",plain:"If the loser still won't pay after the judgment, the winner can get this court order that lets the sheriff go SEIZE the loser's property — bank accounts, equipment, vehicles. It's the nuclear option for collecting."},
+    {term:"Foreign Judgment",plain:"A judgment from one state that gets registered in another state. If Company A gets a $1M judgment in Texas but Company B's assets are in California, Company A 'domesticates' the judgment in California to enforce it there."},
+    {term:"Confession of Judgment",plain:"A clause in some commercial loans where the borrower AGREES IN ADVANCE to a judgment if they default. The lender can go straight to court and get a judgment without even suing. Very controversial, banned for consumers in many states."},
+    {term:"Post-Judgment Interest",plain:"Interest that automatically accrues on the judgment amount starting from the judgment date. Rate varies by state (TX=5%, CA=10%, NY=9%). A $250K judgment at 10% interest grows to $275K after just one year."},
+    {term:"Renewal / Revival",plain:"Judgments have an expiration date (5-20 years depending on the state). Before they expire, the creditor can RENEW them for another period. If they miss the deadline, the judgment dies and they can't collect."},
+  ],
+  criticalFields:[
+    {field:"case_number",why:"The linking key that connects the judgment back to the original SUIT. This is how you trace the full story: lawsuit filed → trial → judgment entered. Without this, the judgment is an orphan.",rank:1},
+    {field:"judgment_debtor",why:"The company that LOST and must pay. This is the entity with financial risk. One company with many unsatisfied judgments = serious red flag for lending, partnership, or acquisition.",rank:2},
+    {field:"amount + interest_rate",why:"How much is owed. But the REAL amount = principal + accrued interest. A 3-year-old $250K judgment at 10% interest is actually worth $325K+. Always calculate the current total.",rank:3},
+    {field:"status",why:"UNSATISFIED = still owed (current financial exposure). SATISFIED = paid in full. VACATED = overturned. This single field determines whether the judgment represents ACTIVE or HISTORICAL risk.",rank:4},
+    {field:"judgment_date",why:"When the judge ruled. Interest starts accruing from THIS date. Also determines when the judgment expires. And it tells you how long the debtor has been carrying this obligation.",rank:5},
+    {field:"judgment_type",why:"DEFAULT = defendant never responded (potentially defunct). CONSENT = negotiated settlement. CONFESSION = pre-agreed in loan. Each type tells a completely different story about what happened.",rank:6},
+  ],
+};
+
+/* ──── BUSINESS REGISTRATIONS ──── */
+const BIZ_REG={
+  title:"Business Registrations",icon:"🏢",color:P.emerald,
+  plain:"Every business entity — LLC, Corporation, Partnership — must register with the state where it's formed. This creates the entity's legal identity. It's like a birth certificate for a company.",
+  rolePlayers:[
+    {role:"Registered Entity",icon:"🏢",plain:"The business itself — the LLC, Corp, or Partnership being registered.",example:"Acme Manufacturing LLC — formed in Texas"},
+    {role:"Registered Agent",icon:"📬",plain:"A person or company designated to receive legal papers (lawsuits, government notices) on behalf of the business. Every entity MUST have one.",example:"CT Corporation System — professional agent service"},
+    {role:"Officers / Directors",icon:"👔",plain:"The people who run the company. Officers = day-to-day (CEO, CFO). Directors = oversight (board). Listed in annual filings.",example:"John Smith, CEO; Jane Doe, CFO; Board of Directors"},
+    {role:"Members / Managers (LLC)",icon:"👥",plain:"LLCs have members (owners) and sometimes managers. Member-managed = owners run it. Manager-managed = hired managers.",example:"Member: John Smith (60%), Jane Doe (40%)"},
+    {role:"Secretary of State",icon:"🏛️",plain:"The state agency that processes registrations. Every state has one. This is where you search for company records.",example:"Texas Secretary of State — sos.state.tx.us"},
+  ],
+  entityTypes:[
+    {type:"LLC",full:"Limited Liability Company",plain:"Most popular. Owners (members) have limited liability — personal assets protected. Flexible taxation.",formed:"Articles of Organization",annual:"Annual Report / Statement of Information"},
+    {type:"Corporation",full:"C-Corporation or S-Corporation",plain:"Separate legal entity from owners. Can issue stock. C-Corp taxed separately; S-Corp passes income to shareholders.",formed:"Articles of Incorporation",annual:"Annual Report + Statement of Officers"},
+    {type:"LP / LLP",full:"Limited Partnership / Limited Liability Partnership",plain:"LP has general partners (liable) and limited partners (investors). LLP = all partners have limited liability. Common in law firms, real estate.",formed:"Certificate of Limited Partnership",annual:"Annual Report"},
+    {type:"Foreign Entity",full:"Foreign Qualification",plain:"A company formed in one state that also does business in another state. Must register in each state it operates.",formed:"Certificate of Authority / Foreign Registration",annual:"Annual Report in each state"},
+    {type:"Sole Proprietorship",full:"DBA / Fictitious Business Name",plain:"One person doing business under a trade name. NOT a separate entity — owner is personally liable. Filed at county level.",formed:"DBA / Fictitious Name Filing",annual:"Renewal varies by county"},
+  ],
+  statuses:[
+    {status:"Active / Good Standing",plain:"Entity is current on all filings and fees. Can legally do business.",color:P.emerald},
+    {status:"Inactive / Administratively Dissolved",plain:"Failed to file annual report or pay fees. Can usually be reinstated within a window.",color:P.amber},
+    {status:"Dissolved / Withdrawn",plain:"Entity has been formally shut down (voluntarily or by the state). No longer exists legally.",color:P.rose},
+    {status:"Suspended / Forfeited",plain:"Tax authority suspended the entity (usually for unpaid taxes). Different from SOS dissolution.",color:P.rose},
+    {status:"Merged",plain:"Entity was absorbed into another company. The surviving entity inherits all obligations.",color:P.indigo},
+  ],
+  sampleFields:["entity_number","entity_name","entity_type","formation_date","formation_state","status","registered_agent","agent_address","principal_address","managed_by","officers[]","annual_report_due_date","last_annual_report"],
+  fieldDetails:[
+    {field:"entity_number",type:"STRING",format:"State-assigned: '0804512345' (DE), '202512345678' (TX)",required:true,notes:"NOT nationally unique — each state has own numbering. Compound key: STATE + entity_number. Also called: filing number, charter number, control number, SOS ID."},
+    {field:"entity_name",type:"STRING",format:"Full legal name including suffix: 'Acme Manufacturing LLC'",required:true,notes:"Must include required designator (LLC, Inc., Corp., LP). Case varies by state (TX=UPPER, CA=mixed). Name changes tracked via amendment filings."},
+    {field:"entity_type",type:"ENUM",format:"DOMESTIC_LLC | DOMESTIC_CORP | FOREIGN_LLC | FOREIGN_CORP | LP | LLP | NONPROFIT",required:true,notes:"DOMESTIC = formed in this state. FOREIGN = formed elsewhere, registered here. Same entity appears in multiple states if foreign qualified."},
+    {field:"formation_date",type:"DATE",format:"YYYY-MM-DD or MM/DD/YYYY",required:true,notes:"Date articles were FILED and accepted by SOS. Very old entities may have '01/01/0001' placeholder. Date of qualification for foreign entities."},
+    {field:"formation_state",type:"STRING",format:"2-letter state code: DE, TX, CA, NY, etc.",required:true,notes:"For domestic entities = current state. For foreign entities = where originally formed (home state). DE is #1 formation state."},
+    {field:"status",type:"ENUM",format:"ACTIVE | INACTIVE | ADMIN_DISSOLVED | VOLUNTARILY_DISSOLVED | SUSPENDED | MERGED | WITHDRAWN",required:true,notes:"States use different terms: 'Good Standing' (DE), 'Active' (TX), 'Forfeited' (TX for tax delinquency). Map to canonical. SOS status ≠ tax status."},
+    {field:"registered_agent",type:"STRING",format:"Person or company name: 'CT Corporation System', 'John Smith'",required:true,notes:"EVERY entity must have one. Professional agents (CT Corp, CSC, Incorp Services) handle 70%+ of filings. Agent address is NOT the company's actual address."},
+    {field:"agent_address",type:"STRING",format:"Full address in the state of registration",required:true,notes:"Must be a PHYSICAL address in the state (no PO boxes). This is where lawsuits are served. Frequently a professional agent's office."},
+    {field:"principal_address",type:"STRING",format:"Company's main business address",required:"Varies by state",notes:"Not all states require or display this. More likely to be the actual business location than agent address. May be out-of-state."},
+    {field:"managed_by",type:"ENUM",format:"MEMBER_MANAGED | MANAGER_MANAGED (LLCs only)",required:"LLCs only",notes:"Member-managed = owners run day-to-day. Manager-managed = hired managers. Affects who has signing authority."},
+    {field:"officers[]",type:"ARRAY",format:"[{name, title, address}] — CEO, CFO, Secretary, Director",required:"Corps + some LLCs",notes:"Only available in annual reports / Statements of Information. NOT in formation docs. CA shows CEO in Statement of Info. DE does NOT show officers in SOS."},
+    {field:"annual_report_due_date",type:"DATE",format:"Based on formation anniversary or fixed date",required:true,notes:"Miss this = administrative dissolution. TX has no annual report (uses franchise tax return). CA LLCs = biennial. Most states = annual on anniversary month."},
+    {field:"jurisdiction",type:"STRING",format:"For foreign entities: state where originally formed",required:"Foreign entities",notes:"Links foreign registration back to domestic. Use home_state + home_entity_number to cross-reference the domestic filing."},
+  ],
+  dataProfile:{
+    volume:{national:"~35M active business entities registered across all 50 states + DC. ~4M new formations per year. ~2M dissolutions per year.",perState:"CA: ~5M active | TX: ~3.5M | FL: ~3.2M | NY: ~2.8M | DE: ~1.8M (disproportionate due to incorporation-friendly laws). Top 5 states hold ~45%.",perEntity:"A single company may appear in 2-6 state SOS databases: 1 domestic + 1-5 foreign qualifications. Average: 1.3 state registrations per entity."},
+    freshness:{updateFreq:"Most SOS systems: real-time to 24-hour delay for new formations. Annual report data: updated on filing cycle (anniversary or fixed date).",lag:"Commercial aggregators: 1-7 day lag. Direct SOS feeds: same-day. Officer/director changes only appear when annual report/statement is filed — can lag 12-24 months.",stale:"Entity may show 'Active' in SOS but be suspended by tax authority (separate database). Always check BOTH SOS status and tax status for true picture."},
+    completeness:[
+      {field:"entity_number",pct:100,note:"Always present — state-assigned primary key"},
+      {field:"entity_name",pct:100,note:"Always present — required on formation docs"},
+      {field:"entity_type",pct:100,note:"Always present: LLC, Corp, LP, etc."},
+      {field:"formation_date",pct:98,note:"~2% pre-digital records have placeholder dates ('01/01/0001' or '01/01/1900')"},
+      {field:"status",pct:100,note:"Always present but terminology varies wildly by state"},
+      {field:"registered_agent",pct:95,note:"Required but ~5% missing on very old records or entities pending dissolution"},
+      {field:"principal_address",pct:70,note:"Not all states require. Often just the registered agent address, not actual business location."},
+      {field:"officers[]",pct:50,note:"Only in states that publish it. DE: 0% (never shows officers). CA: ~80% (in Statement of Info). TX: ~60%."},
+      {field:"managed_by",pct:45,note:"LLC-only field. Not all states collect or display it."},
+      {field:"annual_report_due",pct:75,note:"TX has NO annual report (uses franchise tax return). Most other states: annual on anniversary month."},
+    ],
+    distributions:[
+      {label:"Entity Type",data:"LLC: ~65% | Corporation: ~20% | LP/LLP: ~5% | Nonprofit Corp: ~5% | Foreign Qualified: ~5%"},
+      {label:"Status",data:"Active/Good Standing: ~55% | Administratively Dissolved: ~20% | Voluntarily Dissolved: ~10% | Suspended/Forfeited: ~8% | Merged: ~2% | Other: ~5%"},
+      {label:"Formation State (Domestic)",data:"CA: ~18% | TX: ~12% | FL: ~10% | NY: ~8% | DE: ~7% | IL: ~5% | Other 44 states: ~40%"},
+      {label:"Registered Agent Type",data:"Professional agent (CT Corp, CSC, Incorp): ~70% | Individual/officer: ~25% | Attorney: ~5%"},
+      {label:"Entity Age",data:"Under 1 year: ~12% | 1-5 years: ~30% | 5-10 years: ~20% | 10-20 years: ~20% | Over 20 years: ~18%"},
+    ],
+    businessRules:[
+      "NAME UNIQUENESS: Entity name must be unique within each state. 'Acme LLC' can exist in TX AND CA, but not two 'Acme LLC' in same state. Names reserved for 120 days before filing.",
+      "FOREIGN QUALIFICATION: An LLC formed in DE that does business in TX must register as a 'Foreign LLC' in TX. Same company → two SOS records. Link via home_state + home_entity_number.",
+      "ANNUAL REPORT = SURVIVAL: Miss the annual report → administrative dissolution (usually after 1-2 years of non-filing). Most states allow reinstatement for 2-5 years after dissolution.",
+      "REGISTERED AGENT ADDRESS ≠ BUSINESS ADDRESS: ~70% of entities use professional agents (CT Corp, CSC). The agent address is the agent's office, not the company's actual location. Don't use agent address for company geolocation.",
+      "DE DOESN'T SHOW OFFICERS: Delaware — the #1 incorporation state — does NOT include officer/director data in SOS records. Must get from SEC filings (public companies) or annual reports (private).",
+      "SOS STATUS ≠ TAX STATUS: A company can be 'Active' at SOS but 'Suspended' by the state tax authority (e.g., CA Franchise Tax Board). Check BOTH for true operating status.",
+      "SERIES LLC: TX, DE, IL allow 'Series LLCs' — a single LLC with multiple sub-series, each with its own assets/liabilities. Shows as one SOS record but is legally multiple entities.",
+    ],
+    crossLinks:[
+      {target:"UCC Filings",joinKey:"entity_name ↔ debtor_name + formation_state ↔ debtor_jurisdiction",notes:"UCC must be filed under EXACT SOS entity name. SOS record is the 'gold standard' for the correct debtor name."},
+      {target:"Suits",joinKey:"entity_name (fuzzy) ↔ plaintiff/defendant + registered_agent ↔ service address",notes:"Lawsuits are served on the Registered Agent. SOS lookup confirms entity exists and identifies who to serve."},
+      {target:"Liens",joinKey:"entity_name (fuzzy) ↔ debtor_name",notes:"Tax liens (especially state) can trigger SOS status change to 'SUSPENDED'. Active liens + Active SOS = trouble. Active liens + Dissolved SOS = uncollectable."},
+      {target:"Bankruptcy",joinKey:"entity_name (fuzzy) ↔ bankruptcy debtor + EIN",notes:"Ch. 7 discharge → SOS status should change to DISSOLVED. Ch. 11 emergence → entity remains ACTIVE. Track status change timing."},
+      {target:"Judgments",joinKey:"entity_name (fuzzy) ↔ judgment_debtor/creditor",notes:"Multiple unsatisfied judgments against an entity = financial stress signal. Cross-reference judgment amounts vs entity's disclosed assets."},
+    ],
+  },
+  sampleRecord:'Entity Number: 0804512345\nEntity Name: Acme Manufacturing LLC\nType: Domestic LLC\nFormation Date: 2018-03-15\nFormation State: TX\nStatus: Active\nRegistered Agent: CT Corporation System\n  1999 Bryan St, Suite 900, Dallas TX 75201\nPrincipal Office: 123 Industrial Blvd, Houston TX\nManaged By: Members\nAnnual Report Due: 2026-03-15\nLast Filed: 2025-03-10',
+  devNotes:["Entity Number is unique PER STATE — not nationally unique. Use state + number as ID","Company can be Active in formation state but Dissolved in a foreign state","Registered Agent changes frequently — track as time-series","Officer/Director data only in some states and only in annual reports","DBA/Trade names are separate from entity registration — different database","Name reservation ≠ formation — entity doesn't exist until articles are filed","SOS data is the authoritative source for entity existence and status"],
+  dirtyData:[
+    {raw:'Entity Name: "ACME MANUFACTURING, LLC - SERIES A"',issue:"Series LLC — legal sub-entity within parent LLC",rule:"Parse: parent_entity='ACME MANUFACTURING, LLC', series='SERIES A'"},
+    {raw:'Status: "Involuntary Dissolution/Forfeiture"',issue:"Compound status with slash",rule:"Map to canonical: 'DISSOLVED'. Store original as status_detail."},
+  ],
+  keyTerms:[
+    {term:"Secretary of State (SOS)",plain:"The state government office that manages business registrations. Every state has one (though NY calls it 'Department of State' and some states use different names). This is THE authoritative source for whether a business entity legally exists."},
+    {term:"Articles of Organization",plain:"The document that CREATES an LLC. Filing this with the SOS is like filing a birth certificate — the LLC doesn't exist until this is accepted. It contains the entity name, registered agent, and basic structure."},
+    {term:"Articles of Incorporation",plain:"Same concept but for a Corporation. Filing this creates the corp. Includes authorized shares, directors, incorporator name. The corp version of a birth certificate."},
+    {term:"Registered Agent",plain:"The person or company officially designated to receive legal papers (lawsuits, government notices) on the business's behalf. EVERY business must have one. ~70% use professional services like CT Corporation. The agent's address is NOT the company's actual address."},
+    {term:"Good Standing",plain:"Means the business is current on all its filings and fees with the state. It's the 'clean bill of health' from the SOS. Banks, partners, and customers often require a Certificate of Good Standing before doing business."},
+    {term:"Foreign Qualification",plain:"When a company formed in one state does business in another state, it must register as a 'foreign entity' in that other state. A Delaware LLC operating in Texas registers as a 'Foreign LLC' in Texas. Same company, two state records."},
+    {term:"Administrative Dissolution",plain:"The state forcibly dissolves the business because it failed to file annual reports or pay fees. It's like having your driver's license suspended for not renewing. Most states allow reinstatement within 2-5 years."},
+    {term:"Annual Report",plain:"A periodic filing (annual or biennial) that updates the state on the company's current information — address, officers, agent. Miss this filing → administrative dissolution. Texas is unusual: no annual report required (uses franchise tax return instead)."},
+    {term:"DBA / Fictitious Business Name",plain:"'Doing Business As' — when a company operates under a different name than its legal name. 'Acme Manufacturing LLC' operating as 'Acme Products.' DBAs are filed at the county level, separate from SOS registration."},
+    {term:"Entity Number",plain:"The state-assigned ID number for the business. Like a Social Security Number but for companies. CRITICAL GOTCHA: entity numbers are NOT nationally unique — two different companies in two different states can have the same number."},
+  ],
+  criticalFields:[
+    {field:"entity_name + entity_type",why:"The legal name and type (LLC, Corp, LP). This is how other records refer to the business. UCC filings, liens, suits, and judgments all use entity name as the primary linking key. Mismatches between SOS name and other records are the #1 data quality issue.",rank:1},
+    {field:"status",why:"Is the business ALIVE or DEAD? Active = can legally operate. Dissolved = no longer exists. Suspended = in trouble with tax authority. This single field determines whether other records against this entity are relevant or moot.",rank:2},
+    {field:"formation_state + entity_number",why:"The compound primary key. Formation state tells you where the entity was born (and where UCC filings should be made). Entity number is unique within the state. Together they're the closest thing to a national business ID.",rank:3},
+    {field:"registered_agent + agent_address",why:"Who receives legal papers for this company. If you're trying to serve a lawsuit, this is where you send it. If the agent is a professional service (CT Corp, CSC), the address is the agent's office — NOT the company's actual location.",rank:4},
+    {field:"formation_date",why:"When was the company created? A 20-year-old company has a much longer track record than a 6-month-old one. Also used to detect shell companies (recently formed entities with large debts = red flag).",rank:5},
+    {field:"officers[] / managers[]",why:"Who actually runs the company? Officer and director data links individual people to business entities. Critical for identifying related parties, conflicts of interest, and beneficial ownership. BUT: not all states publish this data (Delaware famously does NOT).",rank:6},
+  ],
+};
+
+/* ──── BANKRUPTCIES ──── */
+const BANKRUPTCY={
+  title:"Bankruptcies",icon:"💥",color:P.indigo,
+  plain:"When a business can't pay its debts, it can file for bankruptcy protection in federal court. The court either helps the business reorganize (keep operating) or liquidate (sell everything and shut down). It's a legal process, not just 'going broke.'",
+  rolePlayers:[
+    {role:"Debtor / Debtor-in-Possession (DIP)",icon:"🏢",plain:"The company filing for bankruptcy. In Chapter 11, they're called 'Debtor-in-Possession' (DIP) because they keep running the business under court supervision.",example:"Acme Manufacturing LLC — filed Chapter 11 to restructure $5M in debt"},
+    {role:"Bankruptcy Trustee",icon:"⚖️",plain:"Court-appointed person who oversees the case. In Chapter 7, the trustee SELLS everything. In Chapter 11, they supervise (company usually keeps control).",example:"John Smith, Esq. — appointed trustee for Acme Chapter 7 liquidation"},
+    {role:"Secured Creditor",icon:"🔐",plain:"A creditor who has collateral (UCC filing, mortgage, etc). They get paid FIRST from the sale of their specific collateral.",example:"Bank of America — has a UCC filing on Acme's equipment"},
+    {role:"Unsecured Creditor",icon:"📝",plain:"A creditor with NO collateral — just a promise to pay. Gets paid AFTER secured creditors, often pennies on the dollar.",example:"Office supply vendor owed $50K with no security interest"},
+    {role:"Creditors' Committee",icon:"👥",plain:"In Chapter 11, a committee of the largest unsecured creditors is formed to represent all unsecured creditors' interests.",example:"Committee of 7 largest unsecured creditors of Acme"},
+    {role:"US Trustee",icon:"🏛️",plain:"A DOJ official who monitors bankruptcy cases for fraud and abuse. NOT the same as the case trustee.",example:"US Trustee's Office, Southern District of New York"},
+  ],
+  chapters:[
+    {ch:"Chapter 7",name:"Liquidation",icon:"🔴",plain:"The company SHUTS DOWN. A trustee sells all assets and distributes proceeds to creditors by priority. The company ceases to exist. Think: 'going out of business sale.'",who:"Any business entity — LLC, Corp, Partnership",duration:"4-6 months typically",outcome:"Company dissolved, debts discharged (for individuals) or extinguished (for entities)",priority:"1. Secured creditors (their collateral)\n2. Administrative costs (lawyers, trustee)\n3. Priority claims (employee wages, taxes)\n4. General unsecured creditors\n5. Equity holders (usually get nothing)"},
+    {ch:"Chapter 11",name:"Reorganization",icon:"🟡",plain:"The company KEEPS OPERATING while it restructures debt. Management stays in control (DIP). A reorganization plan is proposed, creditors vote, court approves. Think: 'we need time to fix this.'",who:"Any business entity — most common for mid-to-large companies",duration:"6 months to several years",outcome:"Company emerges with restructured debt, or converts to Chapter 7 if reorganization fails",priority:"Plan proposes how each class of creditors gets paid:\n- Secured: usually keep collateral claim\n- Unsecured: may get partial payment over time\n- Equity: may be wiped out or diluted"},
+    {ch:"Subchapter V",name:"Small Business Reorg",icon:"🟢",plain:"A streamlined Chapter 11 for small businesses (debt < $7.5M). Faster, cheaper, and the owner can keep their equity. Created in 2019 to make reorganization accessible to small companies.",who:"Small businesses with < $7.5M in debt",duration:"3-5 months to plan confirmation",outcome:"Faster emergence, owner retains equity if plan is fair"},
+    {ch:"Chapter 13",name:"Wage Earner Plan",icon:"🔵",plain:"INDIVIDUALS ONLY (not businesses). Person with regular income creates a 3-5 year repayment plan. Relevant when a sole proprietor files.",who:"Individuals only (sole proprietors)",duration:"3-5 year repayment plan",outcome:"Debts discharged after completing plan"},
+  ],
+  sampleFields:["case_number","court","filing_date","chapter","debtor_name","debtor_ein","debtor_address","trustee","judge","total_assets","total_liabilities","number_of_creditors","nature_of_business","status","plan_confirmation_date","discharge_date","conversion_date"],
+  fieldDetails:[
+    {field:"case_number",type:"STRING",format:"YY-NNNNN or YY-NNNNN-JJJ: '25-10001-DRJ' (JJJ=judge initials)",required:true,notes:"Unique WITHIN a court only. Compound key: court_id + case_number for global uniqueness. Format varies by court."},
+    {field:"court",type:"STRING",format:"'S.D. Tex.', 'D. Del.', 'C.D. Cal.' — 94 bankruptcy courts",required:true,notes:"All bankruptcies are FEDERAL. Courts map to federal districts. Each has its own PACER instance and local rules."},
+    {field:"filing_date",type:"DATE",format:"YYYY-MM-DD",required:true,notes:"Date petition was filed. Automatic stay takes effect IMMEDIATELY on this date. All pre-petition debts frozen."},
+    {field:"chapter",type:"ENUM",format:"7 | 11 | 12 | 13 | 15 | SUBCHAPTER_V",required:true,notes:"Chapter can CONVERT: 11→7 (failed reorg), 7→11 (want to try reorg). Parse conversion history. Subchapter V is a flag on Chapter 11."},
+    {field:"debtor_name",type:"STRING",format:"Entity legal name. Joint filings may have multiple debtors.",required:true,notes:"May differ from SOS registered name. Joint filings: 'Acme Mfg LLC and Acme Holdings LLC' — split into separate entities linked by case_number."},
+    {field:"debtor_ein",type:"STRING",format:"XX-XXXXXXX (EIN) or redacted SSN for individuals",required:"Business filings",notes:"PRIMARY cross-record linking key. Same EIN appears in tax liens, SOS records, SEC filings. Individuals use SSN (partially redacted)."},
+    {field:"trustee",type:"STRING",format:"Person name, or 'Debtor-in-Possession' for Ch. 11 DIP cases",required:false,notes:"Ch. 7 = always has trustee (appointed to liquidate). Ch. 11 = usually DIP (no trustee unless fraud). SubV = SubV trustee (supervisory role)."},
+    {field:"judge",type:"STRING",format:"'Hon. David R. Jones' — assigned bankruptcy judge",required:true,notes:"Judge initials often part of case number. Judges have different tendencies (pro-debtor vs pro-creditor)."},
+    {field:"total_assets",type:"RANGE/DECIMAL",format:"Range checkbox: '$1M-$10M' OR exact: '$3,200,000'",required:true,notes:"Petition uses RANGES (checkbox format). Schedules have exact figures. May be 'Unknown' if schedules not yet filed. Store as range_min/range_max."},
+    {field:"total_liabilities",type:"RANGE/DECIMAL",format:"Same range format as assets: '$1M-$10M'",required:true,notes:"Liabilities usually exceed assets (that's why they filed). Gap = how 'underwater' the debtor is."},
+    {field:"number_of_creditors",type:"RANGE",format:"Range: '1-49', '50-99', '100-199', '200-999', '1000+'",required:true,notes:"Checkbox range on petition. Actual creditor count from Schedules D, E/F. Large Ch. 11 cases can have 100,000+ creditors."},
+    {field:"nature_of_business",type:"ENUM/STRING",format:"NAICS code or description: 'Manufacturing', 'Retail', 'Healthcare'",required:true,notes:"Newer filings use NAICS codes. Older filings use free text. Used for industry analysis and trend detection."},
+    {field:"status",type:"ENUM",format:"OPEN | PENDING | CONFIRMED | DISCHARGED | DISMISSED | CLOSED | CONVERTED",required:true,notes:"OPEN = active case. CONFIRMED = Ch. 11 plan approved. DISCHARGED = debts eliminated. DISMISSED = case thrown out. CONVERTED = changed chapter."},
+    {field:"plan_confirmation_date",type:"DATE",format:"Date court approved the reorganization plan",required:"Ch. 11 only",notes:"Only for Chapter 11/SubV. Marks the point where creditor payment terms are locked in. Can take months to years."},
+    {field:"discharge_date",type:"DATE",format:"Date remaining debts were formally eliminated",required:false,notes:"Ch. 7: discharge ≈ 4 months after filing. Ch. 11: after plan completion. NULL if case dismissed or still pending. Corps in Ch. 7 do NOT get discharge."},
+    {field:"conversion_date",type:"DATE",format:"Date chapter was changed: '2025-03-15'",required:false,notes:"Records when case converted from one chapter to another. Parse: original_chapter, current_chapter, conversion_date."},
+  ],
+  dataProfile:{
+    volume:{national:"~400K-500K new bankruptcy filings per year (all chapters). Business-only: ~20K-25K per year (Ch.7 business + Ch.11 + SubV). Rest are consumer (Ch.7 personal + Ch.13).",perState:"S.D.N.Y.: ~15K/yr | D. Del.: ~5K/yr (disproportionate — large corporate cases). C.D. Cal.: ~12K/yr | S.D. Tex.: ~8K/yr | D.N.J.: ~7K/yr.",perEntity:"Most businesses file 0 bankruptcies. Serial filers rare due to Ch.11 refiling restrictions (180 days if dismissed). ~5% of Ch.11 cases are repeat filers."},
+    freshness:{updateFreq:"PACER: real-time filing. Docket entries appear within minutes. Schedules/claims: 14-30 days after petition filing.",lag:"FJC Integrated Database: quarterly updates (3-6 month lag). CourtListener/RECAP: community-sourced, variable lag. Commercial feeds: 1-7 days.",stale:"Case status may be PENDING for years (large Ch.11). Schedules show assets/liabilities at FILING date — may be outdated as case progresses. Monthly Operating Reports have current figures."},
+    completeness:[
+      {field:"case_number",pct:100,note:"Always present — court-assigned"},
+      {field:"court",pct:100,note:"Always present — 94 bankruptcy courts"},
+      {field:"filing_date",pct:100,note:"Always present"},
+      {field:"chapter",pct:100,note:"Always present. May change via conversion."},
+      {field:"debtor_name",pct:100,note:"Always present"},
+      {field:"debtor_ein",pct:80,note:"~95% of business filings have EIN. Consumer filings use SSN (redacted). ~5% of business filings have errors or missing EIN."},
+      {field:"total_assets",pct:75,note:"Petition has checkbox RANGES ('$1M-$10M'). Exact amounts only in Schedules. ~25% have 'Unknown' or 'Not yet filed'."},
+      {field:"total_liabilities",pct:75,note:"Same as assets — ranges on petition, exact in Schedules."},
+      {field:"trustee",pct:70,note:"Ch.7: always assigned. Ch.11 DIP: field often says 'Debtor-in-Possession'. SubV: always has SubV trustee."},
+      {field:"plan_confirmation_date",pct:30,note:"Only for Ch.11/SubV cases that successfully confirm a plan (~50% of Ch.11 filings). Rest convert, dismiss, or are still pending."},
+      {field:"discharge_date",pct:40,note:"Ch.7 business: NO discharge (entity dissolved). Ch.11: after plan completion. Ch.13: after 3-5 year plan. NULL if dismissed."},
+    ],
+    distributions:[
+      {label:"Chapter (Business Filings)",data:"Chapter 7: ~55% | Chapter 11: ~30% | Subchapter V: ~12% | Chapter 13 (sole prop): ~3%"},
+      {label:"Chapter (All Filings)",data:"Chapter 7: ~62% | Chapter 13: ~30% | Chapter 11: ~6% | SubV: ~1.5% | Other: ~0.5%"},
+      {label:"Outcome (Ch.11)",data:"Plan Confirmed (emerged): ~35% | Converted to Ch.7: ~30% | Dismissed: ~20% | 363 Sale: ~10% | Pending: ~5%"},
+      {label:"Asset Range (Business)",data:"Under $50K: ~30% | $50K-$500K: ~25% | $500K-$5M: ~20% | $5M-$50M: ~15% | Over $50M: ~10%"},
+      {label:"Case Duration",data:"Ch.7 (simple): 4-6 months | Ch.7 (complex): 1-2 years | Ch.11 (small): 6-18 months | Ch.11 (large): 2-5 years | SubV: 3-12 months"},
+      {label:"Top Bankruptcy Courts",data:"D. Del.: ~15% of large Ch.11 | S.D.N.Y.: ~12% of large Ch.11 | S.D. Tex.: ~10% | D.N.J.: ~5%"},
+    ],
+    businessRules:[
+      "AUTOMATIC STAY: All collection efforts STOP the moment the petition is filed. Lawsuits are frozen, foreclosures halted, UCC enforcement paused. This is immediate and automatic (§362).",
+      "CHAPTER CONVERSION: Cases can convert between chapters: 11→7 (reorg failed), 7→11 (want to try reorg). Conversion changes the case dynamics entirely. Track conversion_date and original_chapter.",
+      "SECURED vs UNSECURED: Secured creditors (with UCC filings/liens) get paid from their collateral FIRST. Unsecured creditors split whatever's left. Priority claims (employee wages, taxes) come between.",
+      "90-DAY PREFERENCE: Payments made to creditors in the 90 days BEFORE filing can be 'clawed back' (avoided). Trustee sues to recover preferential transfers. Creates adversary proceedings.",
+      "SUBCHAPTER V: For debts < $7.5M. No creditors' committee, debtor keeps equity, faster timeline (3-5 months to plan). Created 2019, significantly increased small business reorg success rate.",
+      "SCHEDULES ARE GOLD: Schedules A/B (assets), D (secured creditors), E/F (unsecured creditors) contain the richest data. But they're often PDF-only and require extraction. Auto-filed in 14 days.",
+      "363 SALE: Allows sale of assets 'free and clear' of all liens and claims. Buyer gets clean title. Used to sell entire businesses as going concerns. Requires court approval and notice to creditors.",
+      "CORPS DON'T GET DISCHARGE IN CH.7: A corporation in Chapter 7 is simply dissolved — it doesn't receive a 'discharge.' Only individuals and Ch.11 entities that complete their plan get discharge.",
+    ],
+    crossLinks:[
+      {target:"UCC Filings",joinKey:"debtor EIN/name ↔ UCC debtor + Schedule D creditor ↔ secured_party_name",notes:"Every UCC secured party should appear in Schedule D. If a UCC filing exists but no Schedule D entry, the secured party may have missed the deadline to file a Proof of Claim."},
+      {target:"Liens (Tax)",joinKey:"debtor EIN ↔ lien debtor EIN",notes:"Federal tax liens = priority claims in bankruptcy. IRS files Proof of Claim. Tax liens often SURVIVE bankruptcy — they're not discharged if the underlying tax debt isn't fully paid."},
+      {target:"Judgments",joinKey:"debtor name (fuzzy) ↔ judgment_debtor",notes:"Unsatisfied judgments become unsecured claims. Judgment creditors file Proof of Claim. Automatic stay freezes all judgment collection. If judgment lien was recorded, may be partially secured."},
+      {target:"Business Registration",joinKey:"debtor name (fuzzy) ↔ entity_name + EIN",notes:"Ch.7 discharge → SOS status should change to DISSOLVED. Ch.11 emergence → remains ACTIVE. If SOS shows 'Active' but Ch.7 filed → data is stale or case is still pending."},
+      {target:"Suits",joinKey:"debtor name (fuzzy) ↔ defendant + Adversary Proceedings as new suits",notes:"Automatic stay freezes ALL pending suits. Pre-petition suits become claims in the bankruptcy. Adversary proceedings (preference suits, fraudulent transfer suits) are NEW suits within the BK case."},
+    ],
+  },
+  sampleRecord:'Case Number: 25-10001-ABC\nCourt: S.D. Tex. (Houston)\nFiling Date: 2025-01-15\nChapter: 11\nDebtor: Acme Manufacturing LLC\n  EIN: 12-3456789\n  123 Industrial Blvd, Houston TX\nTrustee: Debtor-in-Possession (no trustee)\nJudge: Hon. David R. Jones\nTotal Assets: $3,200,000\nTotal Liabilities: $5,100,000\nCreditors: 47\nStatus: PENDING\nPlan Confirmation: (pending)\nDischarge: (pending)',
+  keyTerms:[
+    {term:"Automatic Stay",plain:"The moment bankruptcy is filed, ALL collection efforts STOP — lawsuits frozen, foreclosures halted, creditors can't call. This is immediate and automatic."},
+    {term:"Proof of Claim",plain:"Each creditor files a form saying 'I'm owed $X for Y reason.' The trustee reviews and either allows or disputes each claim."},
+    {term:"DIP Financing",plain:"New loans taken out DURING Chapter 11 to keep the business running. These new lenders get priority over old debt — that's why anyone would lend to a bankrupt company."},
+    {term:"Plan of Reorganization",plain:"The detailed proposal for how the company will restructure: which debts get reduced, payment schedules, operational changes. Must be approved by creditors + court."},
+    {term:"Discharge",plain:"The court's formal order that eliminates remaining debts. For businesses in Chapter 7, the entity is dissolved. In Chapter 11, the company emerges 'fresh.'"},
+    {term:"363 Sale",plain:"A special sale of assets during bankruptcy that is 'free and clear' of all liens and claims. Buyer gets clean title. Common way to sell a company in distress."},
+    {term:"Preference / Avoidance",plain:"Payments made to creditors in the 90 days BEFORE filing can be 'clawed back' by the trustee. The logic: it's unfair to pay some creditors right before going bankrupt."},
+    {term:"Adversary Proceeding",plain:"A mini-lawsuit WITHIN the bankruptcy case. Example: trustee sues a creditor to claw back a preferential payment."},
+  ],
+  dataSources:["PACER ($0.10/page) — primary source for all bankruptcy filings","RECAP / CourtListener — free historical archive","BankruptcyData.com — commercial aggregator","FJC Integrated Database — free bulk data from Federal Judicial Center"],
+  devNotes:["ALL bankruptcies are FEDERAL — filed in 94 US Bankruptcy Courts (subset of district courts)","Case number format: YY-NNNNN-JJJ where JJJ = judge initials","Chapter can CONVERT: 11→7 (reorganization fails), 7→11 (want to try reorganizing)","Tie to UCC data: secured creditors in bankruptcy had UCC filings BEFORE the bankruptcy","Tie to Judgments: unsatisfied judgments become claims in the bankruptcy","Tie to Business Registration: entity status changes to DISSOLVED after Chapter 7 discharge","EIN (Employer Identification Number) is the key to link across record types","Schedules A-J are the detailed asset/liability/creditor lists — very rich data but PDF-heavy"],
+  dirtyData:[
+    {raw:'Chapter: "11 (converted from 7 on 03/15/2025)"',issue:"Chapter conversion info embedded in field",rule:"Parse: current_chapter=11, original_chapter=7, conversion_date='2025-03-15'"},
+    {raw:'Total Assets: "Unknown - Schedules not yet filed"',issue:"Asset data unavailable at filing time",rule:"Set total_assets=null, flag as PENDING_SCHEDULES"},
+    {raw:'Debtor: "Acme Manufacturing LLC and Acme Holdings LLC"',issue:"Joint filing — multiple debtors in one case",rule:"Split into separate entity records, link via case_number as joint_filing_group"},
+  ],
+  criticalFields:[
+    {field:"chapter",why:"Chapter 7 = company is shutting down and liquidating. Chapter 11 = company is trying to survive and reorganize. Subchapter V = small business fast-track. This single field determines the entire trajectory of the case.",rank:1},
+    {field:"debtor_name + debtor_ein",why:"Who filed? The EIN (Employer ID Number) is the #1 linking key to connect bankruptcy to tax liens, UCC filings, business registrations, and suits. Without EIN, you're relying on fuzzy name matching.",rank:2},
+    {field:"status",why:"OPEN = case is active. CONFIRMED = Ch.11 plan approved (company emerging). DISCHARGED = debts eliminated. DISMISSED = case thrown out. CONVERTED = changed chapters. This tells you where the case is in its lifecycle.",rank:3},
+    {field:"total_assets + total_liabilities",why:"How 'underwater' is the company? Liabilities minus assets = the gap. A company with $5M in liabilities and $1M in assets means unsecured creditors are getting 20 cents on the dollar at best.",rank:4},
+    {field:"filing_date",why:"The day everything changed. Automatic stay kicks in IMMEDIATELY. All suits are frozen. All collection stops. Pre-petition debts are frozen. Every date in the case is measured from this date.",rank:5},
+    {field:"case_number + court",why:"Compound primary key (case numbers are NOT nationally unique — same number can exist in different courts). Also tells you jurisdiction: Delaware and SDNY handle the biggest corporate cases, which affects outcomes.",rank:6},
+    {field:"plan_confirmation_date + discharge_date",why:"These mark the END of the story. Plan confirmed = company emerging from Ch.11. Discharge = debts officially eliminated. If both are NULL, the case is still ongoing. If only discharge is NULL after years, the plan may be failing.",rank:7},
+  ],
+};
+
+/* ──── SUITS ──── */
+const SUITS={
+  title:"Suits (Lawsuits)",icon:"⚖️",color:P.sky,
+  plain:"When one business sues another, a civil suit is filed with the court. Suits are the starting point of the legal pipeline — they can lead to judgments, which can become liens, which can trigger bankruptcies. For business entities, suits include breach of contract, debt collection, patent infringement, SEC enforcement, and more.",
+  rolePlayers:[
+    {role:"Plaintiff",icon:"👤",plain:"The party who FILES the lawsuit — the one claiming they were wronged or are owed money. In business suits, often a bank, vendor, or competitor.",example:"First National Bank, N.A. (suing for unpaid loan)"},
+    {role:"Defendant",icon:"🎯",plain:"The party being SUED — the one accused of wrongdoing or owing money. This is the company under legal risk.",example:"Acme Manufacturing LLC (accused of breach of contract)"},
+    {role:"Court",icon:"🏛️",plain:"The court where the suit is filed. State courts for most business disputes. Federal courts for cross-state disputes, patent, securities, and bankruptcy-related suits.",example:"Harris County District Court (state) or S.D. Tex. (federal)"},
+    {role:"Registered Agent",icon:"📬",plain:"The person legally designated to receive lawsuit papers on behalf of the company. If the agent can't be found, service is attempted at the principal address.",example:"CT Corporation System — accepts service for Acme Manufacturing"},
+    {role:"Attorney / Law Firm",icon:"⚖️",plain:"The lawyers representing each side. Large business suits often involve major law firms. Attorney fee data appears in judgment amounts.",example:"Baker & McKenzie (for plaintiff); Kirkland & Ellis (for defendant)"},
+  ],
+  lifecycle:[
+    {phase:"Filing",plain:"Plaintiff files complaint with court. Court assigns case number and issues summons. Business examples: breach of contract, patent infringement, debt collection, SEC enforcement.",timing:"Day 0"},
+    {phase:"Service of Process",plain:"Defendant is formally notified via their Registered Agent. If agent not found, may attempt personal service or service by publication.",timing:"Within 120 days of filing"},
+    {phase:"Answer / Response",plain:"Defendant has 20-30 days to respond. May file Answer (defend), Motion to Dismiss (challenge legal basis), or Counterclaim (sue back).",timing:"20-30 days after service"},
+    {phase:"Discovery",plain:"Both sides exchange documents, take depositions, and gather evidence. Most expensive phase. E-discovery for large companies can involve millions of documents.",timing:"3-12 months"},
+    {phase:"Trial / Motion",plain:"If not settled, case goes to trial (jury or bench). ~95% of business suits settle before this point. Summary judgment motions can resolve cases without trial.",timing:"1-3 years from filing"},
+    {phase:"Judgment / Disposition",plain:"Court issues final order — damages (money), injunction (stop doing something), or dismissal (case thrown out). Judgment becomes a separate public record.",timing:"End of case"},
+  ],
+  caseTypes:[
+    {code:"Contract",plain:"Breach of contract — one party didn't fulfill their obligations. Most common business suit type.",examples:"Unpaid invoices, failed deliveries, broken vendor agreements"},
+    {code:"Debt Collection",plain:"Creditor sues to recover unpaid debt. Banks, credit companies, and collection agencies are typical plaintiffs.",examples:"Loan default, unpaid credit lines, past-due accounts"},
+    {code:"Tort / Negligence",plain:"One business caused harm to another through carelessness or intentional action.",examples:"Product liability, professional malpractice, property damage"},
+    {code:"Intellectual Property",plain:"Patent infringement, trademark disputes, trade secret theft. Often filed in federal court.",examples:"Patent infringement (830 NOS code), copyright violation, trade secret misappropriation"},
+    {code:"Employment",plain:"Current or former employees suing the business. Wage theft, discrimination, wrongful termination.",examples:"FLSA violations, Title VII claims, EEOC enforcement"},
+    {code:"Securities / SEC",plain:"SEC enforcement actions or shareholder lawsuits. Filed in federal court. Involves publicly traded companies.",examples:"Securities fraud (10b-5), insider trading, accounting irregularities"},
+    {code:"Regulatory / FTC / CFPB",plain:"Federal agencies suing businesses for violations. Consumer protection, antitrust, financial regulation.",examples:"Deceptive practices, unfair lending, antitrust violations"},
+  ],
+  sampleFields:["case_number","court","filing_date","case_type","cause_of_action","plaintiff_name","plaintiff_type","defendant_name","defendant_type","attorney_plaintiff","attorney_defendant","status","disposition","disposition_date","judgment_amount","is_entity_plaintiff","is_entity_defendant"],
+  fieldDetails:[
+    {field:"case_number",type:"STRING",format:"State: '2024-CV-00042'. Federal: '1:25-cv-01234'. SEC: 'LR-26219'.",required:true,notes:"Format varies wildly by court. State = county-specific numbering. Federal = district:YY-type-NNNNN. SEC Litigation Releases have own numbering."},
+    {field:"court",type:"STRING",format:"State: 'Harris County District Court'. Federal: 'S.D.N.Y.'",required:true,notes:"Determines jurisdiction and applicable law. State courts for most business disputes. Federal for cross-state, IP, securities, bankruptcy adversary."},
+    {field:"filing_date",type:"DATE",format:"YYYY-MM-DD or MM/DD/YYYY",required:true,notes:"Date complaint was filed with the clerk. Statute of limitations measured from alleged harm TO this date. Clock starts ticking."},
+    {field:"case_type",type:"ENUM",format:"CONTRACT | DEBT_COLLECTION | TORT | IP_PATENT | EMPLOYMENT | SECURITIES | REGULATORY",required:true,notes:"State courts often use vague codes: 'OTHER', 'MISCELLANEOUS'. Federal uses Nature of Suit (NOS) codes: 190=Contract, 830=Patent, 385=SEC. Map to canonical."},
+    {field:"cause_of_action",type:"TEXT",format:"'Breach of Contract', 'Patent Infringement 35 USC 271', 'Fraud'",required:false,notes:"More specific than case_type. May reference statute. Free text in some courts, coded in others. Often extracted from complaint (first filing)."},
+    {field:"plaintiff_name",type:"STRING",format:"Entity or individual name. May be government agency.",required:true,notes:"Entity names include suffixes: LLC, Inc., N.A., Corp. Commas in names break CSV. Government plaintiffs: SEC, FTC, CFPB, state AG. Multiple plaintiffs possible."},
+    {field:"plaintiff_type",type:"ENUM",format:"ENTITY | INDIVIDUAL | GOVERNMENT | CLASS (class action)",required:false,notes:"NOT always provided by court — often must be INFERRED. Pattern match: LLC/Inc/Corp/Bank/N.A. → ENTITY. SEC/FTC/State of → GOVERNMENT. No suffix → likely INDIVIDUAL."},
+    {field:"defendant_name",type:"STRING",format:"Business entity being sued. May include DBA/f/k/a variants.",required:true,notes:"Multiple defendants common. Name variants: 'f/k/a' (formerly known as), 'd/b/a' (doing business as). Entity resolution critical."},
+    {field:"defendant_type",type:"ENUM",format:"ENTITY | INDIVIDUAL | GOVERNMENT",required:false,notes:"Same inference rules as plaintiff_type. Business entity suits = at least one party is an entity."},
+    {field:"attorney_plaintiff",type:"STRING",format:"'Baker & McKenzie LLP' or 'Pro Se' (self-represented)",required:false,notes:"Law firm name + individual attorney. Large firms = large case. 'Pro Se' = no attorney (unusual for business entities). Fee data in judgment."},
+    {field:"status",type:"ENUM",format:"OPEN | PENDING | DISPOSED | APPEALED | STAYED | DISMISSED",required:true,notes:"DISPOSED = case concluded (any outcome). STAYED = frozen (often by bankruptcy automatic stay). DISMISSED = thrown out (with or without prejudice)."},
+    {field:"disposition",type:"ENUM",format:"JUDGMENT_PLAINTIFF | JUDGMENT_DEFENDANT | SETTLED | DISMISSED | TRANSFERRED | DEFAULT",required:"Disposed cases",notes:"How the case ended. SETTLED = most common (~95% of business suits). DEFAULT = defendant never responded. TRANSFERRED = moved to another court."},
+    {field:"disposition_date",type:"DATE",format:"Date case was resolved",required:"Disposed cases",notes:"Used to calculate case duration (filing_date → disposition_date). Average business suit: 12-18 months."},
+    {field:"judgment_amount",type:"DECIMAL",format:"$250,000.00 or NULL (non-monetary cases)",required:false,notes:"Only for money judgments. Injunction cases have no amount. Settlements may or may not be disclosed (confidential settlement = no amount). Links to judgment record."},
+    {field:"is_entity",type:"BOOLEAN",format:"true/false for each party",required:"Derived",notes:"DERIVED FIELD — not in source data. Must be computed by pattern matching on party names. Critical for filtering to business entity suits only."},
+  ],
+  dataProfile:{
+    volume:{national:"~15M-17M new civil suits filed per year across all state and federal courts. Business entity suits (where at least one party is a business): ~5M-6M per year.",perState:"CA: ~2M civil filings/yr | TX: ~1.5M | FL: ~1.5M | NY: ~1.2M | IL: ~600K. County-level courts hold the vast majority. Federal district courts: ~300K civil filings/yr.",perEntity:"Average business has 0-1 active suits at any time. Large corporations may have 50-200+ concurrent suits. Financial companies (banks, insurance) are frequent plaintiffs."},
+    freshness:{updateFreq:"State courts: 1-5 day delay for docket entries. Federal PACER: same-day filing. SEC EDGAR: same-day for enforcement actions.",lag:"Commercial aggregators: 7-30 day lag for state courts. PACER: real-time. Settlement details often NEVER become public (sealed/confidential). ~95% of business suits settle before trial.",stale:"Case status 'OPEN' can persist for years if case is stayed, on appeal, or in discovery. DISPOSED cases have fixed dates. Dismissed cases: check if dismissed WITH or WITHOUT prejudice (can refile if without)."},
+    completeness:[
+      {field:"case_number",pct:100,note:"Always present — court-assigned"},
+      {field:"court",pct:100,note:"Always present"},
+      {field:"filing_date",pct:100,note:"Always present"},
+      {field:"case_type",pct:85,note:"~15% are 'OTHER' or 'MISCELLANEOUS'. Federal uses NOS codes (more precise). State courts often use vague categories."},
+      {field:"cause_of_action",pct:60,note:"Free text when available. Often must be extracted from complaint PDF. Federal: more structured. State: often blank."},
+      {field:"plaintiff_name",pct:99,note:"Almost always present"},
+      {field:"defendant_name",pct:99,note:"Almost always present"},
+      {field:"plaintiff_type",pct:30,note:"Rarely tagged by court — must be INFERRED from name pattern (LLC/Inc/Corp → entity, SEC/FTC → govt)"},
+      {field:"defendant_type",pct:30,note:"Same inference requirement as plaintiff_type"},
+      {field:"attorney_plaintiff",pct:75,note:"Usually present in court records. 'Pro Se' = self-represented (uncommon for entities)."},
+      {field:"disposition",pct:70,note:"Only on disposed cases. SETTLED is most common but settlement terms are usually confidential."},
+      {field:"judgment_amount",pct:40,note:"Only when money judgment entered. Settlements: amount usually confidential. Injunctions: no amount. Dismissals: no amount."},
+    ],
+    distributions:[
+      {label:"Case Type (Business)",data:"Contract/Breach: ~35% | Debt Collection: ~25% | Tort/Negligence: ~15% | Employment: ~10% | IP/Patent: ~5% | Securities: ~3% | Regulatory: ~2% | Other: ~5%"},
+      {label:"Disposition",data:"Settled/Agreed: ~55% | Dismissed: ~20% | Default Judgment: ~12% | Judgment for Plaintiff: ~8% | Judgment for Defendant: ~3% | Transferred: ~2%"},
+      {label:"Court Type",data:"State courts: ~95% of all civil suits | Federal district courts: ~4% | Federal specialty (Tax Court, CIT): ~1%"},
+      {label:"Entity Role",data:"Business as Defendant: ~60% | Business as Plaintiff: ~35% | Business vs Business: ~30% | Entity vs Individual: ~25%"},
+      {label:"Case Duration",data:"Under 6 months: ~30% (settled/dismissed early) | 6-12 months: ~25% | 1-2 years: ~25% | 2-5 years: ~15% | Over 5 years: ~5%"},
+      {label:"Amount at Stake",data:"Under $25K: ~35% | $25K-$100K: ~20% | $100K-$500K: ~20% | $500K-$1M: ~10% | Over $1M: ~10% | Unspecified: ~5%"},
+    ],
+    businessRules:[
+      "STATUTE OF LIMITATIONS: Every case type has a filing deadline (varies by state). Contract: 4-6 years. Tort: 2-3 years. Patent: 6 years. Fraud: 3-4 years. Case filed after deadline → defendant files Motion to Dismiss.",
+      "SERVICE OF PROCESS: Defendant must be formally served (notified). Business entities are served via their Registered Agent. Failed service → case cannot proceed. SOS records identify the agent.",
+      "DISCOVERY: The most expensive and time-consuming phase. Parties exchange documents, take depositions, hire experts. E-discovery for large companies can cost $1M+. Most settlements happen during discovery.",
+      "SETTLEMENT CONFIDENTIALITY: ~95% of business suits settle before trial. Settlement terms (amount, conditions) are almost always CONFIDENTIAL. The court record only shows 'DISMISSED — SETTLED.' Amount is unknown.",
+      "DEFAULT JUDGMENT: If defendant doesn't respond within 20-30 days of service, plaintiff can request default judgment for the FULL amount claimed. ~12% of cases. Often means defendant is defunct or unreachable.",
+      "FORUM SHOPPING: Plaintiffs choose courts strategically. Federal court for IP/securities (expert judges). Delaware for corporate governance. E.D. Tex. historically for patent cases. Know the venue bias.",
+      "CLASS ACTION: A single suit representing thousands of plaintiffs. Class certification decision is make-or-break. If certified, settlement value jumps dramatically. Consumer product, securities, employment most common.",
+      "SEC ENFORCEMENT: SEC files suits in federal court OR handles administratively (ALJ hearing). Consent decrees common (~80%). Penalties + disgorgement of profits. EDGAR 8-K/10-K disclosures mandatory.",
+    ],
+    crossLinks:[
+      {target:"Judgments",joinKey:"case_number ↔ judgment case_number",notes:"1:1 link. Suit disposition → judgment entered by court → becomes separate judgment record. case_number is the direct join key. Not all suits produce judgments (dismissed, settled)."},
+      {target:"Business Registration",joinKey:"defendant_name (fuzzy) ↔ entity_name + SOS registered_agent for service",notes:"Plaintiff looks up SOS records to find Registered Agent for service. Entity name in SOS = correct party name. If entity is dissolved, may be unable to serve."},
+      {target:"Bankruptcy",joinKey:"defendant_name (fuzzy) ↔ bankruptcy debtor",notes:"If defendant files bankruptcy → automatic stay freezes the suit. Plaintiff must file Proof of Claim in BK case instead. Suit becomes a claim. Adversary proceedings are new suits WITHIN BK."},
+      {target:"Liens",joinKey:"case_number → judgment → Abstract of Judgment → lien",notes:"Suit → judgment → judgment lien is a 3-step chain. The suit itself doesn't create a lien — the judgment does, and only when recorded as an Abstract at the county recorder."},
+      {target:"UCC Filings",joinKey:"plaintiff/defendant (fuzzy) ↔ secured_party/debtor",notes:"Lender (UCC secured party) may sue debtor for default. Suit is the enforcement mechanism when debtor doesn't pay. Look for secured party as plaintiff."},
+    ],
+  },
+  sampleRecord:'Case Number: 2024-CV-00042\nCourt: Harris County District Court\nFiling Date: 2024-06-15\nCase Type: Contract - Breach\nPlaintiff: First National Bank, N.A.\n  Type: Financial Institution\nDefendant: Acme Manufacturing LLC\n  Type: LLC\nPlaintiff Attorney: Baker & McKenzie LLP\nDefendant Attorney: Kirkland & Ellis LLP\nStatus: DISPOSED\nDisposition: Judgment for Plaintiff\nDisposition Date: 2025-01-15\nJudgment Amount: $250,000.00',
+  dataSources:["State court systems (TX, CA, NY, FL, IL, OH — each has own portal)","PACER for federal civil suits ($0.10/page)","SEC EDGAR for enforcement actions (free, sec.gov/litigation)","FTC Case Database (free, ftc.gov)","CFPB Enforcement (free, consumerfinance.gov)","RECAP / CourtListener for free federal court records"],
+  devNotes:[
+    "Suits are the UPSTREAM source — they flow into Judgments, Liens, and Bankruptcies",
+    "State courts have NO unified system — each state (and often each county) has its own portal and data format",
+    "Federal suits are in PACER — 94 district courts, each with own CM/ECF system",
+    "Entity names in court records often differ from SOS records — Inc. vs Incorporated, N.A. vs National Association",
+    "Party type (individual vs entity) must be INFERRED — courts don't always tag it",
+    "~95% of business suits settle before trial — disposition type 'SETTLED' is most common",
+    "Case number formats vary by court: '2024-CV-00042' (TX) vs '1:24-cv-01234' (federal) vs 'BC-2024-12345' (CA)",
+    "SEC enforcement actions use 'Litigation Release' numbers: LR-26219, unique across all federal courts",
+    "A single business dispute may appear in MULTIPLE courts — state suit + federal counter-suit + SEC action"
+  ],
+  dirtyData:[
+    {raw:'Plaintiff: "BANK OF AMERICA, N.A."',issue:"Entity name has commas — breaks CSV parsing",rule:"Entity names with commas require proper CSV quoting. Normalize: strip commas from suffixes."},
+    {raw:'Case Type: "OTHER" or "MISCELLANEOUS"',issue:"Vague case type — no useful classification",rule:"Flag as case_type='UNCLASSIFIED'. May need manual review or NLP on complaint text."},
+    {raw:'Defendant: "JOHN SMITH DBA ACME ROOFING"',issue:"Individual + DBA name — is this a person or a business?",rule:"Split: party_name='JOHN SMITH', dba='ACME ROOFING', party_type='INDIVIDUAL_DBA'. Not a business entity."},
+    {raw:'Amount: (blank — injunction case)',issue:"Not all suits involve money — injunctions, declaratory judgments have no dollar amount",rule:"Set amount=null, amount_type='NON_MONETARY'. Filter these from financial analysis."},
+  ],
+  keyTerms:[
+    {term:"Complaint",plain:"The document that STARTS a lawsuit. The plaintiff writes up what happened and what they want (money, an injunction, etc.) and files it with the court. Think of it as the 'Dear Court, here's my problem' letter."},
+    {term:"Summons",plain:"The court's official notice to the defendant saying 'you're being sued — respond within 20-30 days or you lose automatically.' Delivered by a process server or via the company's registered agent."},
+    {term:"Service of Process",plain:"The formal act of delivering the lawsuit papers to the defendant. For businesses, this goes to the Registered Agent listed in SOS records. If the agent can't be found, the plaintiff has to get creative (newspaper publication, etc.)."},
+    {term:"Discovery",plain:"The phase where both sides exchange evidence — documents, emails, financial records, depositions (sworn testimony). This is the most expensive phase. For big companies, e-discovery (searching millions of electronic documents) can cost millions of dollars."},
+    {term:"Deposition",plain:"Sworn testimony given outside of court, recorded by a court reporter. Lawyers ask questions, witnesses answer under oath. 'What did you know and when did you know it?' — that kind of thing. Very common in business suits."},
+    {term:"Motion to Dismiss",plain:"The defendant's first defense move: asking the court to throw out the case because it has a legal defect (wrong jurisdiction, statute of limitations expired, complaint doesn't state a valid claim). If granted, case is over before it really starts."},
+    {term:"Settlement",plain:"When both sides agree to resolve the dispute without a full trial. ~95% of business suits settle. Terms are usually CONFIDENTIAL — the public record just shows 'Dismissed — Settled.' The actual dollar amount stays secret."},
+    {term:"Disposition",plain:"How the case ended. Could be: judgment for plaintiff (they won), judgment for defendant (they won), settled (agreed to terms), dismissed (thrown out), or transferred (moved to another court). This is the final outcome."},
+    {term:"Statute of Limitations",plain:"The deadline to file a lawsuit. Varies by case type and state: breach of contract = 4-6 years, personal injury = 2-3 years, patent = 6 years. Miss it and you can never sue, no matter how strong your case."},
+    {term:"Injunction",plain:"A court order telling someone to STOP doing something (or START doing something). Unlike a money judgment, an injunction is about behavior. 'Stop using our trademark' or 'Stop selling that product.' Violation = contempt of court."},
+  ],
+  criticalFields:[
+    {field:"case_number + court",why:"The unique identifier for the suit. Format varies wildly by court: '2024-CV-00042' (TX state) vs '1:25-cv-01234' (federal) vs 'BC-2024-12345' (CA). Court + case_number is the compound key. Also links to judgments via case_number.",rank:1},
+    {field:"plaintiff_name + defendant_name",why:"Who sued whom. For business entity analysis, you need to determine: is the company being sued (defendant = risk) or doing the suing (plaintiff = they're the one claiming harm). Entity resolution against SOS records is critical.",rank:2},
+    {field:"case_type / cause_of_action",why:"What's the lawsuit ABOUT? Contract breach, debt collection, patent infringement, SEC enforcement? This determines severity, expected duration, likely outcome, and which other records are connected.",rank:3},
+    {field:"status + disposition",why:"OPEN = active litigation (ongoing risk). DISPOSED = concluded. The disposition tells you HOW it ended: settled, judgment for plaintiff, dismissed, defaulted. ~95% of business suits settle.",rank:4},
+    {field:"filing_date + disposition_date",why:"Filing date = when the clock started. Disposition date = when it ended. The gap = case duration. A 3-year-old open case is very different from a 3-month-old one. Also needed for statute of limitations analysis.",rank:5},
+    {field:"is_entity (derived)",why:"Courts don't tag parties as 'business' vs 'individual' — you must INFER it from the name. LLC, Inc., Corp, N.A., Bank → entity. No suffix → likely individual. This derived field is essential for filtering to business suits only.",rank:6},
+  ],
+};
+
+const ALL_TYPES=[UCC,LIENS,JUDGMENTS,BIZ_REG,BANKRUPTCY,SUITS];
+
+/* ══════════════════════ SECTIONS ══════════════════════ */
+function SecOverview(){
+  const connections=[
+    {from:"Suit (Lawsuit)",to:"Judgment",link:"Suit wins → court enters judgment → becomes a public record. Linked by case_number.",color:P.sky},
+    {from:"Suit",to:"Bankruptcy",link:"Automatic stay freezes ALL pending suits when debtor files bankruptcy. Suits become claims.",color:P.sky},
+    {from:"Suit",to:"Business Registration",link:"Plaintiff serves lawsuit via Registered Agent. SOS records confirm entity exists and identify agent.",color:P.sky},
+    {from:"Judgment",to:"Lien",link:"Court judgment → recorded as judgment lien on property via Abstract of Judgment",color:P.amber},
+    {from:"Business Registration",to:"UCC Filing",link:"Lender checks entity exists in SOS → files UCC against registered entity name",color:P.emerald},
+    {from:"UCC Filing",to:"Bankruptcy",link:"Secured creditor's UCC = priority claim in bankruptcy. Schedule D lists secured claims.",color:P.cyan},
+    {from:"Tax Lien",to:"Bankruptcy",link:"IRS lien = priority claim in bankruptcy (ahead of most creditors). Liens survive bankruptcy.",color:P.rose},
+    {from:"Bankruptcy",to:"Business Registration",link:"Chapter 7 discharge → entity status changes to DISSOLVED in SOS records",color:P.indigo},
+    {from:"Suit (SEC/FTC/CFPB)",to:"Judgment",link:"Federal enforcement → consent decree or penalty. SEC actions link to EDGAR 10-K disclosures.",color:P.sky},
+    {from:"Judgment (Unsatisfied)",to:"Suit (Collection)",link:"If judgment debtor doesn't pay → creditor may file new suit to enforce or garnish assets",color:P.amber},
+  ];
+  return React.createElement("div",{className:"fade-up"},
+    React.createElement("p",{style:{color:P.textDim,fontSize:13,lineHeight:1.8,marginBottom:16,maxWidth:720}},"These 6 record types form the complete picture of a business entity's financial and legal health. Suits are the upstream starting point — they flow into judgments, which become liens, which can trigger bankruptcies. UCC filings show secured debt, and business registrations confirm the entity exists."),
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:6,marginBottom:20}},
+      ALL_TYPES.map(function(t){return React.createElement("div",{key:t.title,style:{background:P.surface,border:"1px solid "+P.border,borderTop:"3px solid "+t.color,borderRadius:8,padding:10,textAlign:"center"}},
+        React.createElement("div",{style:{fontSize:24}},t.icon),
+        React.createElement("div",{style:{color:t.color,fontWeight:700,fontSize:11,fontFamily:P.serif,marginTop:4}},t.title),
+        React.createElement("div",{style:{color:P.textDim,fontSize:9,marginTop:4,lineHeight:1.4}},t.plain.substring(0,100)+"...")
+      )})
+    ),
+    React.createElement("div",{style:{color:P.textFaint,fontSize:9,fontWeight:700,letterSpacing:2,marginBottom:8}},"HOW THEY CONNECT — THE DATA GRAPH"),
+    connections.map(function(c,i){return React.createElement("div",{key:i,style:{display:"grid",gridTemplateColumns:"160px 24px 160px 1fr",gap:8,alignItems:"center",padding:"6px 10px",background:i%2?P.raised:"transparent",borderRadius:6}},
+      React.createElement("div",{style:{color:c.color,fontWeight:600,fontSize:11}},c.from),
+      React.createElement("span",{style:{color:P.textFaint,textAlign:"center"}},"→"),
+      React.createElement("div",{style:{color:c.color,fontWeight:600,fontSize:11}},c.to),
+      React.createElement("div",{style:{color:P.textDim,fontSize:10}},c.link)
+    )}),
+    React.createElement(InfoBox,{title:"Why This Matters for Due Diligence",icon:"🔍"},"When evaluating a company for a loan, acquisition, or partnership — you pull ALL 6 record types. Active suits show ongoing legal risk. Judgments show court-ordered obligations. UCC filings show existing secured debt. Tax liens show government claims. Business registration confirms the entity exists and is in good standing. Any bankruptcy history is a major red flag. Together they tell the complete story.")
+  );
+}
+
+/* ══════════ SCENARIOS ══════════ */
+function SecScenarios(){
+  var _sel = useState(0), sel = _sel[0], setSel = _sel[1];
+  var scenarios=[
+    {title:"Healthy Company",icon:"🟢",tagline:"What 'clean records' look like — the baseline every developer should recognize",
+     entity:"Summit Logistics LLC",ein:"83-1234567",state:"TX",
+     summary:"A well-run mid-size trucking company with clean records. This is the BASELINE — what a healthy company looks like across all 6 record types. When you're evaluating any company, deviations from this pattern are your signals.",
+     timeline:[
+       {date:"2016-03-10",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"Summit Logistics LLC formed in Texas",detail:"SOS Status: Active / Good Standing. Registered Agent: CT Corporation. Annual reports filed every year on time. 8 years of continuous operation = established business."},
+       {date:"2016-05-01",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-1 filed: Regions Bank, collateral = 15 Peterbilt trucks",detail:"Equipment financing — very normal for trucking. Collateral is SPECIFIC (named trucks with VINs), not a blanket 'all assets' lien. Secured party is a reputable regional bank."},
+       {date:"2019-04-15",type:"Suit",color:P.sky,icon:"⚖️",event:"Sued by cargo owner for $45K damaged shipment — SETTLED in 3 months",detail:"One small suit in 8 years of operation = normal. Fast settlement = company is responsive and has resources to resolve disputes. No pattern of litigation."},
+       {date:"2021-05-01",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-3 Continuation filed: Regions Bank extends lien 5 more years",detail:"Lender renewed the filing = the loan is still active and the relationship is healthy. Lender still wants to protect their collateral. This is routine."},
+       {date:"2024-01-10",type:"UCC",color:P.cyan,icon:"📋",event:"New UCC-1: Wells Fargo, collateral = accounts receivable",detail:"Second UCC = company is growing and taking on new financing. Accounts receivable financing is common and healthy for trucking companies with large corporate customers."},
+     ],
+     signals:[
+       {signal:"SOS Active for 8+ years with no lapses",meaning:"Stable, established business. Entity has survived multiple economic cycles.",flag:"green"},
+       {signal:"Only 2 UCC filings, both with specific collateral",meaning:"Moderate leverage. Specific collateral (not 'all assets') means lenders see enough value in individual assets.",flag:"green"},
+       {signal:"1 suit in 8 years, settled quickly",meaning:"Not litigious, not a target. Quick settlement shows financial capacity and willingness to resolve disputes.",flag:"green"},
+       {signal:"Zero tax liens, zero judgments, zero bankruptcy",meaning:"Pays taxes on time, no court-ordered debts, never needed court protection. Cleanest possible profile.",flag:"green"},
+     ],
+     verdict:"LOW RISK. This is what you want to see in due diligence. If you're a bank considering lending to Summit, or an acquirer evaluating them, this profile gives confidence. The only thing to verify: are the existing UCC filings current (check lapse dates) and is the company current on its Texas franchise tax.",
+    },
+    {title:"Distress Spiral → Bankruptcy",icon:"🔴",tagline:"How to spot a company heading toward failure — the warning signs unfold over 18 months",
+     entity:"Coastal Construction Group Inc",ein:"59-7654321",state:"FL",
+     summary:"A mid-size construction company that spirals from healthy to bankrupt in 18 months. This is the CLASSIC distress pattern. Every record type lights up in sequence — suits first, then liens, then judgments, then bankruptcy. If your data pipeline catches the early signals, you can alert stakeholders months before the bankruptcy filing.",
+     timeline:[
+       {date:"2018-06-15",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"Coastal Construction Group Inc formed in Florida",detail:"FL Corporation, Active status. Officers: Robert Chen (CEO), Maria Santos (CFO). Revenue ~$12M/year."},
+       {date:"2019-03-01",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-1: Bank of America, collateral = ALL ASSETS (blanket lien)",detail:"⚠️ Blanket lien means the bank controls EVERYTHING. Limits the company's ability to borrow elsewhere."},
+       {date:"2023-09-01",type:"Suit",color:P.sky,icon:"⚖️",event:"Suit #1: Concrete supplier sues for $85K unpaid invoices",detail:"🚩 EARLY WARNING. A vendor suing for unpaid invoices means the company is stretching payables. This is often the FIRST public sign of cash flow problems."},
+       {date:"2023-11-15",type:"Suit",color:P.sky,icon:"⚖️",event:"Suit #2: Subcontractor sues for $120K unpaid work",detail:"🚩 Two vendor suits in 3 months = systematic non-payment, not a one-off dispute. Cash flow is deteriorating."},
+       {date:"2024-01-20",type:"Lien",color:P.rose,icon:"🔒",event:"Mechanics Lien filed: Electrical sub, $67K on Oceanview Condo project",detail:"🚩 Sub-contractor protecting their interest. Coastal can't sell or refinance this property until resolved."},
+       {date:"2024-02-10",type:"Lien",color:P.rose,icon:"🔒",event:"IRS Federal Tax Lien: $312K (Form 941 — payroll taxes)",detail:"🔴 CRITICAL. Payroll tax lien = company isn't sending employees' withheld taxes to the IRS. Last resort before collapse."},
+       {date:"2024-04-05",type:"Judgment",color:P.amber,icon:"🔨",event:"Default Judgment: $85K to concrete supplier (Suit #1)",detail:"🔴 DEFAULT judgment — company didn't even respond. Can't afford a lawyer or management has checked out."},
+       {date:"2024-05-15",type:"Lien",color:P.rose,icon:"🔒",event:"State Tax Lien: FL Dept of Revenue, $89K sales tax",detail:"🔴 Federal AND state tax liens = company isn't paying ANY taxes."},
+       {date:"2024-06-01",type:"Suit",color:P.sky,icon:"⚖️",event:"Suit #3: Bank of America sues for loan default, $1.2M",detail:"🔴 When your primary lender files suit, the relationship is over. This often precipitates a bankruptcy filing."},
+       {date:"2024-07-10",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"Chapter 11 filed: S.D. Fla., Case 24-15678",detail:"Automatic Stay freezes ALL suits, liens, and collections. Assets: $2.1M. Liabilities: $4.8M. 38 creditors."},
+       {date:"2024-12-15",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"Chapter 11 → CONVERTED to Chapter 7 (liquidation)",detail:"Reorganization failed. Trustee appointed to sell all assets. BofA gets paid first. IRS gets priority for payroll taxes."},
+       {date:"2025-03-01",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"FL SOS Status: ADMINISTRATIVELY DISSOLVED",detail:"Entity is officially dead. All assets liquidated. Dissolution in SOS records is the final entry."},
+     ],
+     signals:[
+       {signal:"Vendor suits appearing (Sept-Nov 2023)",meaning:"EARLIEST warning sign. Multiple vendor suits in a short window = systemic cash flow problems. Alert when suit_count > 2 within 6 months.",flag:"yellow"},
+       {signal:"Federal payroll tax lien — Form 941 (Feb 2024)",meaning:"THE BIGGEST RED FLAG. Companies that stop paying payroll taxes are in survival mode. 941 liens have the highest correlation with eventual bankruptcy.",flag:"red"},
+       {signal:"Default judgment — company didn't respond (Apr 2024)",meaning:"Not fighting back = no resources or management has checked out. Default rate on suits against eventually-bankrupt companies is ~40%.",flag:"red"},
+       {signal:"Primary lender sues for loan default (Jun 2024)",meaning:"When your bank sues you, it's over. Bankruptcy filing usually follows within 60 days.",flag:"red"},
+       {signal:"Ch.11 → Ch.7 conversion (Dec 2024)",meaning:"Reorganization attempt failed. ~30% of Chapter 11 cases convert to Chapter 7.",flag:"red"},
+     ],
+     verdict:"TIMELINE ANALYSIS: If your pipeline flagged the first vendor suit in September 2023, you had 10 MONTHS of warning before the bankruptcy filing. The payroll tax lien in February 2024 gave 5 months of warning. The key insight: no single record tells the whole story — it's the PATTERN across record types and the VELOCITY of deterioration that predicts failure.",
+    },
+    {title:"Acquisition Due Diligence",icon:"🔍",tagline:"What a PE firm sees when evaluating a target — the records they pull and what they look for",
+     entity:"MedDevice Solutions LLC",ein:"47-9876543",state:"DE",
+     summary:"A private equity firm is evaluating MedDevice Solutions for a $50M acquisition. They pull all 6 record types and find a mostly clean profile with a few items requiring investigation. This scenario shows how public records drive deal decisions.",
+     timeline:[
+       {date:"2012-08-20",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"MedDevice Solutions LLC formed in Delaware",detail:"✓ DE formation = typical for VC/PE-backed companies. 12 years of continuous operation. Status: Active/Good Standing."},
+       {date:"2012-09-01",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"Foreign qualified in CA, TX, MA, IL",detail:"✓ Real multi-state operations. Each foreign registration is current."},
+       {date:"2015-03-15",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-1: Silicon Valley Bank, collateral = all assets (blanket)",detail:"⚠️ Blanket lien by SVB. PE buyer needs the outstanding loan balance. UCC must be TERMINATED at acquisition or buyer inherits the lien."},
+       {date:"2019-07-01",type:"Suit",color:P.sky,icon:"⚖️",event:"Patent infringement suit: CompetitorX sues MedDevice, N.D. Cal.",detail:"⚠️ Patent suit in federal court. What's the potential exposure? Is it covered by insurance?"},
+       {date:"2021-06-10",type:"Suit",color:P.sky,icon:"⚖️",event:"Patent suit SETTLED — terms confidential. Case dismissed with prejudice.",detail:"✓ RESOLVED. 'With prejudice' = can never refile. But PE firm asks: any ongoing royalty obligations?"},
+       {date:"2022-11-01",type:"Suit",color:P.sky,icon:"⚖️",event:"Employment suit: Former VP sues for wrongful termination, $500K",detail:"⚠️ $500K is small relative to $50M deal. But investigate: is this a pattern?"},
+       {date:"2023-04-20",type:"Suit",color:P.sky,icon:"⚖️",event:"Employment suit settled for undisclosed amount. Dismissed.",detail:"✓ RESOLVED. Two suits in 12 years = within normal range for 200+ employees."},
+       {date:"2024-06-15",type:"Lien",color:P.rose,icon:"🔒",event:"CA State Tax Lien: $28K — disputed assessment on R&D credits",detail:"⚠️ $28K is tiny relative to deal size, but tax disputes can signal larger issues."},
+     ],
+     signals:[
+       {signal:"DE formation + 4 foreign qualifications, all Active",meaning:"Real, established multi-state business. All registrations current.",flag:"green"},
+       {signal:"One active UCC (blanket lien by SVB)",meaning:"Needs closing action. PE firm requires payoff at closing and UCC-3 Termination. SVB payoff goes into deal model.",flag:"yellow"},
+       {signal:"2 suits in 12 years, both resolved",meaning:"Within normal range. No pending open litigation = clean for closing.",flag:"green"},
+       {signal:"Patent suit settled with prejudice",meaning:"Investigate: What did the settlement include? Ongoing royalty? Cross-license?",flag:"yellow"},
+       {signal:"$28K state tax lien (active)",meaning:"Minor — resolve pre-closing or set aside escrow. Tax counsel should confirm no broader audit.",flag:"yellow"},
+       {signal:"Zero federal tax liens, zero judgments, zero bankruptcies",meaning:"Clean financial profile. No IRS issues, no court-ordered debts. Strong target.",flag:"green"},
+     ],
+     verdict:"DEAL ASSESSMENT: Mostly clean, deal-ready profile. Three items for the purchase agreement: (1) SVB lien payoff at closing with UCC termination, (2) seller represents and warrants no undisclosed obligations from patent settlement, (3) $28K CA tax lien resolved pre-closing or escrowed. None are deal-breakers. Total known liabilities to clear: SVB payoff + $28K tax lien.",
+    },
+    {title:"Chapter 11 Recovery",icon:"🟡",tagline:"A company goes through bankruptcy and comes out the other side — what the records show before, during, and after",
+     entity:"NorthStar Retail Holdings Corp",ein:"26-5551234",state:"DE",
+     summary:"A retail chain files Chapter 11, successfully reorganizes, and emerges as a viable business. This shows the full lifecycle: pre-petition distress signals, the bankruptcy process itself, and what 'healthy after bankruptcy' looks like in the records.",
+     timeline:[
+       {date:"2019-01-15",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"NorthStar Retail Holdings Corp formed in Delaware. Foreign qualified in 12 states.",detail:"Multi-state retail chain with ~50 stores. DE Corp. Annual revenue ~$120M."},
+       {date:"2019-06-01",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-1: JP Morgan, blanket lien — $40M revolving credit facility",detail:"Standard large retail financing. Blanket lien = JPM has priority on everything."},
+       {date:"2022-09-01",type:"Suit",color:P.sky,icon:"⚖️",event:"3 landlord suits for unpaid rent ($180K, $95K, $220K)",detail:"🚩 When a retailer stops paying rent, stores are about to close. Common pre-bankruptcy pattern."},
+       {date:"2022-11-15",type:"Lien",color:P.rose,icon:"🔒",event:"IRS NFTL: $890K in payroll taxes (Form 941), multiple quarters",detail:"🔴 Almost $1M in payroll taxes. Company using tax money to fund operations."},
+       {date:"2023-01-10",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"Chapter 11 filed: D. Delaware, Case 23-10100. DIP financing: $25M from PNC Bank.",detail:"Filed in Delaware. DIP financing = someone believes the company can survive."},
+       {date:"2023-03-01",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"Schedules filed: $45M assets, $78M liabilities, 215 creditors",detail:"$33M gap. JPM: $40M secured. IRS: $890K priority. 200+ unsecured creditors owed $37M."},
+       {date:"2023-06-15",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"18 of 50 stores closing. Leases rejected for 18 locations.",detail:"Court approves unprofitable store closings. Lease rejection frees company from obligations."},
+       {date:"2023-11-15",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"Plan CONFIRMED. JPM converts $20M to equity. Unsecured creditors get 15 cents on dollar.",detail:"NorthStar emerges with 32 stores, $20M less debt, JPM as shareholder."},
+       {date:"2024-01-02",type:"Bankruptcy",color:P.indigo,icon:"💥",event:"EFFECTIVE DATE: NorthStar emerges from Chapter 11. Discharge entered.",detail:"The company is officially out of bankruptcy. Old debts restructured."},
+       {date:"2024-01-15",type:"UCC",color:P.cyan,icon:"📋",event:"Old JPM UCC-1 TERMINATED. New UCC-1 filed: PNC (new credit facility)",detail:"Old debt structure replaced. New UCC reflects the reorganized capital structure."},
+       {date:"2024-02-01",type:"Lien",color:P.rose,icon:"🔒",event:"IRS tax lien: RELEASED (payments being made per plan)",detail:"IRS releases lien. Record stays but status = RELEASED."},
+       {date:"2024-06-01",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"DE SOS: ACTIVE. Foreign registrations WITHDRAWN in 8 states, ACTIVE in 4.",detail:"Entity alive. 8 states withdrawn (closed stores). 4 states active = new footprint."},
+     ],
+     signals:[
+       {signal:"Landlord suits + 941 tax lien = classic retail distress",meaning:"When a retailer has simultaneous landlord suits AND payroll tax liens, Chapter 11 is almost certain.",flag:"red"},
+       {signal:"DIP financing obtained ($25M)",meaning:"A new lender believes the company can survive. No DIP financing = much worse prognosis.",flag:"green"},
+       {signal:"Plan confirmed + discharge entered",meaning:"Successfully emerged. Only ~35% of Ch.11 cases achieve this.",flag:"green"},
+       {signal:"Old UCC terminated, new UCC filed",meaning:"Capital structure reset. Track UCC terminations that coincide with bankruptcy discharge.",flag:"green"},
+       {signal:"Foreign registrations withdrawn in 8 states",meaning:"Smaller but alive. Withdrawn registrations = closed locations.",flag:"yellow"},
+     ],
+     verdict:"POST-EMERGENCE PROFILE: Bankruptcy history alone doesn't mean current risk. Check: is the plan being performed? Are post-emergence payments current? Is SOS Active? A successfully emerged Ch.11 company can be a BETTER credit risk because its balance sheet was cleaned up by the court.",
+    },
+    {title:"Shell Company Red Flags",icon:"🚨",tagline:"Patterns that suggest a company may not be what it claims — fraud, shells, and nominee structures",
+     entity:"Apex Global Ventures LLC",ein:"88-0000123",state:"NV",
+     summary:"A company that raises red flags at every level. While no single indicator proves fraud, the COMBINATION of these signals should trigger enhanced due diligence. Your data pipeline should flag these patterns automatically.",
+     timeline:[
+       {date:"2024-08-01",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"Apex Global Ventures LLC formed in Nevada",detail:"🚩 NV formation with no NV operations. Nevada = no state income tax, minimal disclosure. Registered Agent: $99/year service."},
+       {date:"2024-08-05",type:"Biz Reg",color:P.emerald,icon:"🏢",event:"Foreign qualified in FL. Manager: 'GlobalTrust Management Services Ltd' (Belize entity)",detail:"🚩 OFFSHORE MANAGER. No individual names disclosed. Nominee structure designed to obscure beneficial ownership."},
+       {date:"2024-08-15",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-1 filed: Apex (debtor) AND Apex (secured party) — self-filing",detail:"🚩 SELF-FILED UCC. Company filed a UCC against ITSELF. Known fraud tactic to create fictitious lien priority."},
+       {date:"2024-09-01",type:"UCC",color:P.cyan,icon:"📋",event:"UCC-1 filed: Apex as secured party against 3 other entities in 3 states",detail:"🚩 Brand-new company claiming security interests in multiple entities? Likely a network of related shells."},
+       {date:"2024-10-15",type:"Suit",color:P.sky,icon:"⚖️",event:"FL AG Consumer Protection suit: deceptive business practices, $2M",detail:"🔴 STATE AG ENFORCEMENT. Government plaintiffs carry extra weight."},
+     ],
+     signals:[
+       {signal:"NV formation + no NV operations + $99 agent",meaning:"NV is a 'secrecy' state. Combined with bare-bones agent and no actual NV office = formed for privacy protections.",flag:"red"},
+       {signal:"Offshore entity as LLC manager, no individual names",meaning:"Beneficial ownership concealment. Belize/BVI/Seychelles managers = virtually impossible to identify true owners.",flag:"red"},
+       {signal:"Self-filed UCC (debtor = secured party)",meaning:"FRAUD INDICATOR. Auto-flag cases where debtor_name ≈ secured_party_name.",flag:"red"},
+       {signal:"Brand-new entity as secured party on multiple UCCs",meaning:"6-week-old company claiming security interests in 3 others is suspicious. Check for shared agents/managers.",flag:"red"},
+       {signal:"State AG enforcement suit within 10 weeks",meaning:"Government enforcement on a company that's only existed for 10 weeks = extremely high risk.",flag:"red"},
+     ],
+     verdict:"MAXIMUM RED FLAGS. Pipeline rules: (1) Auto-flag self-filed UCCs, (2) Flag entities <6 months old with enforcement actions, (3) Flag offshore managers/members, (4) Flag NV/WY formation + no in-state operations + minimal agent. These rules would catch this entity within its first month.",
+    },
+  ];
+  var sc=scenarios[sel];
+  return React.createElement("div",{className:"fade-up"},
+    React.createElement("p",{style:{color:P.textDim,fontSize:13,lineHeight:1.8,marginBottom:16,maxWidth:720}},"Real-world scenarios showing how public records tell the story of a business entity's health. Each scenario walks through the timeline of records and explains what the signals mean — the pattern recognition that turns raw data into actionable intelligence."),
+    React.createElement("div",{style:{display:"grid",gridTemplateColumns:"repeat("+scenarios.length+",1fr)",gap:4,marginBottom:20}},
+      scenarios.map(function(s,i){return React.createElement("button",{key:i,onClick:function(){setSel(i)},style:{padding:"10px 6px",borderRadius:8,border:"none",cursor:"pointer",textAlign:"center",fontFamily:P.sans,background:sel===i?P.amber+"22":"transparent",borderBottom:sel===i?"3px solid "+P.amber:"3px solid transparent"}},
+        React.createElement("div",{style:{fontSize:20}},s.icon),
+        React.createElement("div",{style:{color:sel===i?P.amber:P.textDim,fontWeight:700,fontSize:10,marginTop:2}},s.title)
+      )})
+    ),
+    React.createElement("div",{key:sel,className:"fade-up"},
+      React.createElement("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:12,padding:16,marginBottom:16}},
+        React.createElement("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"start",marginBottom:8}},
+          React.createElement("div",null,
+            React.createElement("div",{style:{color:P.textBright,fontWeight:700,fontSize:18,fontFamily:P.serif}},sc.icon+" "+sc.entity),
+            React.createElement("div",{style:{color:P.textDim,fontSize:11,marginTop:2}},sc.tagline)
+          ),
+          React.createElement("div",{style:{textAlign:"right"}},
+            React.createElement("div",{style:{fontFamily:P.mono,fontSize:9,color:P.textFaint}},"EIN: "+sc.ein),
+            React.createElement("div",{style:{fontFamily:P.mono,fontSize:9,color:P.textFaint}},"State: "+sc.state)
+          )
+        ),
+        React.createElement("div",{style:{color:P.textDim,fontSize:11,lineHeight:1.7,marginTop:8,padding:"10px 12px",background:P.raised,borderRadius:8}},sc.summary)
+      ),
+      React.createElement("div",{style:{color:P.textFaint,fontSize:9,fontWeight:700,letterSpacing:2,marginBottom:10}},"📅 RECORD TIMELINE"),
+      React.createElement("div",{style:{position:"relative",paddingLeft:24}},
+        React.createElement("div",{style:{position:"absolute",left:9,top:0,bottom:0,width:2,background:P.border}}),
+        sc.timeline.map(function(t,i){return React.createElement("div",{key:i,style:{position:"relative",marginBottom:8,paddingLeft:20}},
+          React.createElement("div",{style:{position:"absolute",left:-20,top:4,width:20,height:20,borderRadius:"50%",background:t.color+"33",border:"2px solid "+t.color,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10}},t.icon),
+          React.createElement("div",{style:{background:P.surface,border:"1px solid "+P.border,borderLeft:"3px solid "+t.color,borderRadius:"0 8px 8px 0",padding:"8px 12px"}},
+            React.createElement("div",{style:{display:"flex",gap:10,alignItems:"center",marginBottom:4}},
+              React.createElement("span",{style:{fontFamily:P.mono,fontSize:9,color:P.textFaint}},t.date),
+              React.createElement(Badge,{color:t.color},t.type)
+            ),
+            React.createElement("div",{style:{color:P.textBright,fontSize:11,fontWeight:600,marginBottom:4}},t.event),
+            React.createElement("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.6}},t.detail)
+          )
+        )})
+      ),
+      React.createElement("div",{style:{color:P.textFaint,fontSize:9,fontWeight:700,letterSpacing:2,margin:"20px 0 10px"}},"🚦 SIGNAL ANALYSIS"),
+      sc.signals.map(function(s,i){return React.createElement("div",{key:i,style:{display:"grid",gridTemplateColumns:"24px 1fr",gap:10,padding:"8px 12px",background:i%2?P.raised:P.surface,borderRadius:8,marginBottom:4,borderLeft:"3px solid "+(s.flag==="green"?P.emerald:s.flag==="yellow"?P.amber:P.rose)}},
+        React.createElement("div",{style:{fontSize:16,textAlign:"center"}},s.flag==="green"?"🟢":s.flag==="yellow"?"🟡":"🔴"),
+        React.createElement("div",null,
+          React.createElement("div",{style:{color:P.textBright,fontSize:11,fontWeight:600,marginBottom:2}},s.signal),
+          React.createElement("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.5}},s.meaning)
+        )
+      )}),
+      React.createElement("div",{style:{background:P.amberBg,border:"1px solid "+P.amber+"33",borderRadius:10,padding:16,marginTop:16}},
+        React.createElement("div",{style:{color:P.amber,fontWeight:700,fontSize:13,fontFamily:P.serif,marginBottom:8}},"📋 VERDICT & PIPELINE IMPLICATIONS"),
+        React.createElement("div",{style:{color:"#fbbf24cc",fontSize:11,lineHeight:1.8}},sc.verdict)
+      )
+    )
+  );
+}
+
+/* ══════════ RECORD TYPE DEEP DIVE ══════════ */
+function SecRecordType(){
+  var _s=useState("ucc"),sel=_s[0],setSel=_s[1];
+  var map={ucc:UCC,liens:LIENS,judgments:JUDGMENTS,bizreg:BIZ_REG,bankruptcy:BANKRUPTCY,suits:SUITS};
+  var rec=map[sel];
+  var h=React.createElement;
+
+  /* Helper to render a section block */
+  function Sec(title,icon,children){return h("div",{style:{marginTop:16}},h("div",{style:{color:P.textFaint,fontSize:9,fontWeight:700,letterSpacing:2,marginBottom:8}},icon+" "+title),children)}
+
+  return h("div",{className:"fade-up"},
+    /* Tab bar */
+    h("div",{style:{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:4,marginBottom:16}},
+      Object.entries(map).map(function(e){var id=e[0],r=e[1];return h("button",{key:id,onClick:function(){setSel(id)},style:{padding:"8px 4px",borderRadius:8,border:"none",cursor:"pointer",textAlign:"center",fontFamily:P.sans,background:sel===id?r.color+"22":"transparent",borderBottom:sel===id?"2px solid "+r.color:"2px solid transparent"}},
+        h("div",{style:{fontSize:18}},r.icon),
+        h("div",{style:{color:sel===id?r.color:P.textDim,fontWeight:700,fontSize:10}},r.title)
+      )})
+    ),
+    h("div",{key:sel,className:"fade-up"},
+      /* Plain English */
+      h("div",{style:{background:rec.color+"12",border:"1px solid "+rec.color+"22",borderRadius:10,padding:14,marginBottom:12}},
+        h("div",{style:{color:rec.color,fontWeight:700,fontSize:16,fontFamily:P.serif,marginBottom:6}},rec.icon+" "+rec.title+" — In Plain English"),
+        h("div",{style:{color:P.textDim,fontSize:12,lineHeight:1.7}},rec.plain)
+      ),
+      /* Role Players */
+      Sec("ROLE PLAYERS — WHO'S INVOLVED","👥",
+        h("div",{style:{display:"grid",gridTemplateColumns:rec.rolePlayers.length>3?"1fr 1fr 1fr":"repeat("+rec.rolePlayers.length+",1fr)",gap:6}},
+          rec.rolePlayers.map(function(r,i){return h(DataCard,{key:i,color:rec.color,title:r.icon+" "+r.role},
+            h("div",{style:{color:P.textDim,fontSize:11,lineHeight:1.5,marginBottom:4}},r.plain),
+            h("div",{style:{color:P.textFaint,fontSize:9,fontStyle:"italic"}},"Example: "+r.example)
+          )})
+        )
+      ),
+      /* Forms (UCC) */
+      rec.forms?Sec("FORM TYPES","📄",rec.forms.map(function(f,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"80px 1fr 1fr",gap:8,padding:"6px 10px",borderRadius:6,background:i%2?P.raised:P.surface}},
+        h("div",null,h("div",{style:{color:rec.color,fontWeight:700,fontSize:12}},f.form),h("div",{style:{color:P.textDim,fontSize:9}},f.name)),
+        h("div",null,h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.5}},f.plain)),
+        h("div",null,h("div",{style:{color:P.textFaint,fontSize:9}},"When: "+f.when),h("div",{style:{color:P.textFaint,fontSize:9}},f.duration||f.variants))
+      )})):null,
+      /* Types (Liens) */
+      rec.types?Sec("LIEN / JUDGMENT TYPES","📑",rec.types.map(function(t,i){return h("div",{key:i,style:{padding:"8px 10px",background:i%2?P.raised:P.surface,borderRadius:6,borderLeft:"3px solid "+rec.color,marginBottom:2}},
+        h("div",{style:{color:rec.color,fontWeight:700,fontSize:12}},t.type),
+        h("div",{style:{color:P.textDim,fontSize:11,lineHeight:1.5}},t.plain)
+      )})):null,
+      /* Entity Types (BizReg) */
+      rec.entityTypes?Sec("ENTITY TYPES","🏗️",rec.entityTypes.map(function(t,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"80px 1fr",gap:8,padding:"6px 10px",borderRadius:6,background:i%2?P.raised:P.surface}},
+        h("div",{style:{color:rec.color,fontWeight:700,fontSize:13}},t.type),
+        h("div",null,h("div",{style:{color:P.text,fontSize:11,lineHeight:1.5}},t.plain),h("div",{style:{color:P.textFaint,fontSize:9,marginTop:2}},"Formed by: "+t.formed+" | Annual: "+t.annual))
+      )})):null,
+      /* Statuses (BizReg) */
+      rec.statuses?Sec("ENTITY STATUSES","🔘",rec.statuses.map(function(s,i){return h("div",{key:i,style:{display:"flex",gap:10,alignItems:"center",padding:"6px 10px",borderRadius:6,background:i%2?P.raised:P.surface}},
+        h("div",{style:{width:10,height:10,borderRadius:"50%",background:s.color}}),
+        h("div",{style:{color:s.color,fontWeight:700,fontSize:11,minWidth:200}},s.status),
+        h("div",{style:{color:P.textDim,fontSize:10}},s.plain)
+      )})):null,
+      /* Chapters (Bankruptcy) */
+      rec.chapters?Sec("BANKRUPTCY CHAPTERS","📖",rec.chapters.map(function(c,i){return h("div",{key:i,style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:12,marginBottom:6}},
+        h("div",{style:{display:"flex",gap:8,alignItems:"center",marginBottom:6}},h("span",{style:{fontSize:18}},c.icon),h("span",{style:{color:rec.color,fontWeight:700,fontSize:14,fontFamily:P.serif}},c.ch+" — "+c.name)),
+        h("div",{style:{color:P.textDim,fontSize:11,lineHeight:1.6,marginBottom:6}},c.plain),
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}},
+          h("div",{style:{background:P.raised,borderRadius:6,padding:6}},h("div",{style:{color:P.textFaint,fontSize:8,fontWeight:700}},"WHO"),h("div",{style:{color:P.textDim,fontSize:9}},c.who)),
+          h("div",{style:{background:P.raised,borderRadius:6,padding:6}},h("div",{style:{color:P.textFaint,fontSize:8,fontWeight:700}},"DURATION"),h("div",{style:{color:P.textDim,fontSize:9}},c.duration)),
+          h("div",{style:{background:P.raised,borderRadius:6,padding:6}},h("div",{style:{color:P.textFaint,fontSize:8,fontWeight:700}},"OUTCOME"),h("div",{style:{color:P.textDim,fontSize:9}},c.outcome))
+        ),
+        c.priority?h("div",{style:{background:"#080b12",borderRadius:6,padding:6,marginTop:6,fontFamily:P.mono,fontSize:9,color:P.textDim,whiteSpace:"pre-wrap"}},c.priority):null
+      )})):null,
+      /* Key Terms */
+      rec.keyTerms?Sec("KEY TERMS — PLAIN ENGLISH GLOSSARY","📘",
+        h("div",{style:{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}},
+          rec.keyTerms.map(function(t,i){return h("div",{key:i,style:{background:P.raised,borderRadius:6,padding:8}},
+            h("div",{style:{color:rec.color,fontWeight:700,fontSize:11,marginBottom:3}},t.term),
+            h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.5}},t.plain)
+          )})
+        )
+      ):null,
+      /* Lifecycle (Suits) */
+      rec.lifecycle?Sec("SUIT LIFECYCLE PHASES","⏱️",rec.lifecycle.map(function(p,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"40px 1fr",gap:8,padding:"6px 10px",borderRadius:6,background:i%2?P.raised:P.surface}},
+        h("div",{style:{color:rec.color,fontWeight:900,fontSize:20,fontFamily:P.mono,textAlign:"center"}},p.phase),
+        h("div",null,h("div",{style:{color:rec.color,fontWeight:700,fontSize:12}},p.name+" — "+p.timing),h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.5}},p.plain))
+      )})):null,
+      /* Case Types (Suits) */
+      rec.caseTypes?Sec("BUSINESS SUIT CASE TYPES","⚖️",rec.caseTypes.map(function(t,i){return h("div",{key:i,style:{padding:"8px 10px",background:i%2?P.raised:P.surface,borderRadius:6,borderLeft:"3px solid "+rec.color,marginBottom:2}},
+        h("div",{style:{color:rec.color,fontWeight:700,fontSize:12}},t.code),
+        h("div",{style:{color:P.textDim,fontSize:11,lineHeight:1.5}},t.plain),
+        h("div",{style:{color:P.textFaint,fontSize:9,marginTop:2}},"Examples: "+t.examples)
+      )})):null,
+      /* Critical Fields */
+      rec.criticalFields?Sec("MOST IMPORTANT FIELDS — WHAT MATTERS AND WHY","⭐",
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14}},
+          rec.criticalFields.sort(function(a,b){return a.rank-b.rank}).map(function(f,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"28px 160px 1fr",gap:10,padding:"8px 6px",borderBottom:i<rec.criticalFields.length-1?"1px solid "+P.border+"33":"none",alignItems:"start"}},
+            h("div",{style:{background:rec.color+"22",color:rec.color,fontWeight:900,fontSize:13,fontFamily:P.mono,textAlign:"center",borderRadius:6,padding:"2px 0"}},f.rank),
+            h("code",{style:{color:"#2dd4a8",fontSize:10,fontWeight:600,paddingTop:2}},f.field),
+            h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.6}},f.why)
+          )})
+        )
+      ):null,
+      /* Data Sources */
+      rec.dataSources?Sec("DATA SOURCES — WHERE TO GET THIS DATA","🌐",
+        rec.dataSources.map(function(s,i){return h("div",{key:i,style:{padding:"4px 10px",borderLeft:"2px solid "+rec.color,color:P.textDim,fontSize:10,marginBottom:2}},s)})
+      ):null,
+      /* DATA PROFILE */
+      rec.dataProfile?h("div",{style:{marginTop:16}},
+        h("div",{style:{color:P.textFaint,fontSize:9,fontWeight:700,letterSpacing:2,marginBottom:10}},"📈 DATA PROFILE — UNDERSTANDING THE DATA AT SCALE"),
+        /* Volume */
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14,marginBottom:8}},
+          h("div",{style:{color:rec.color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:8}},"📦 Data Volume & Scale"),
+          Object.entries(rec.dataProfile.volume).map(function(e,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"100px 1fr",gap:8,padding:"4px 0"}},
+            h("div",{style:{color:P.textFaint,fontSize:9,fontWeight:600,textTransform:"uppercase"}},e[0].replace(/([A-Z])/g," $1")),
+            h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.5}},e[1])
+          )})
+        ),
+        /* Freshness */
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14,marginBottom:8}},
+          h("div",{style:{color:rec.color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:8}},"🕐 Data Freshness & Latency"),
+          Object.entries(rec.dataProfile.freshness).map(function(e,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"100px 1fr",gap:8,padding:"4px 0"}},
+            h("div",{style:{color:P.textFaint,fontSize:9,fontWeight:600,textTransform:"uppercase"}},e[0].replace(/([A-Z])/g," $1")),
+            h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.5}},e[1])
+          )})
+        ),
+        /* Completeness */
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14,marginBottom:8}},
+          h("div",{style:{color:rec.color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:8}},"📊 Field Completeness"),
+          rec.dataProfile.completeness.map(function(c,i){return h("div",{key:i,style:{marginBottom:6}},
+            h("div",{style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}},
+              h("code",{style:{color:"#2dd4a8",fontSize:9,fontWeight:600}},c.field),
+              h("span",{style:{color:c.pct>=95?P.emerald:c.pct>=70?P.amber:P.rose,fontSize:10,fontWeight:700}},c.pct+"%")
+            ),
+            h("div",{style:{background:"#080b12",borderRadius:3,height:6,overflow:"hidden"}},
+              h("div",{style:{width:c.pct+"%",height:"100%",borderRadius:3,background:c.pct>=95?P.emerald:c.pct>=70?P.amber:P.rose,opacity:0.7}})
+            ),
+            h("div",{style:{color:P.textFaint,fontSize:8,marginTop:1}},c.note)
+          )})
+        ),
+        /* Distributions */
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14,marginBottom:8}},
+          h("div",{style:{color:rec.color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:8}},"📉 Value Distributions"),
+          rec.dataProfile.distributions.map(function(d,i){return h("div",{key:i,style:{padding:"6px 10px",background:i%2?P.raised:"transparent",borderRadius:6,marginBottom:2}},
+            h("div",{style:{color:rec.color,fontWeight:700,fontSize:10,marginBottom:2}},d.label),
+            h("div",{style:{color:P.textDim,fontSize:9,lineHeight:1.6,fontFamily:P.mono}},d.data)
+          )})
+        ),
+        /* Business Rules */
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14,marginBottom:8}},
+          h("div",{style:{color:rec.color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:8}},"📜 Business Rules"),
+          rec.dataProfile.businessRules.map(function(r,i){return h("div",{key:i,style:{padding:"6px 10px",borderLeft:"3px solid "+rec.color+"44",marginBottom:4,borderRadius:"0 6px 6px 0",background:i%2?P.raised:"transparent"}},
+            h("div",{style:{color:P.textDim,fontSize:10,lineHeight:1.6}},r)
+          )})
+        ),
+        /* Cross Links */
+        h("div",{style:{background:P.surface,border:"1px solid "+P.border,borderRadius:10,padding:14,marginBottom:8}},
+          h("div",{style:{color:rec.color,fontWeight:700,fontSize:12,fontFamily:P.serif,marginBottom:8}},"🔗 Cross-Record Linking"),
+          rec.dataProfile.crossLinks.map(function(l,i){return h("div",{key:i,style:{background:P.raised,border:"1px solid "+P.border,borderRadius:8,padding:10,marginBottom:6}},
+            h("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:4}},
+              h("span",{style:{color:rec.color,fontWeight:700,fontSize:11}},rec.title),
+              h("span",{style:{color:P.textFaint}},"→"),
+              h("span",{style:{color:P.amber,fontWeight:700,fontSize:11}},l.target)
+            ),
+            h("div",{style:{background:"#080b12",borderRadius:4,padding:"4px 8px",fontFamily:P.mono,fontSize:9,color:"#2dd4a8",marginBottom:4}},l.joinKey),
+            h("div",{style:{color:P.textFaint,fontSize:9,lineHeight:1.5}},l.notes)
+          )})
+        )
+      ):null,
+      /* Field Dictionary */
+      Sec("DATA FIELD DICTIONARY","📊",
+        rec.fieldDetails?h("div",{style:{border:"1px solid "+P.border,borderRadius:8,overflow:"hidden"}},
+          h("div",{style:{display:"grid",gridTemplateColumns:"130px 70px 1fr 50px",gap:0,padding:"6px 10px",background:P.raised,borderBottom:"1px solid "+P.border,fontWeight:700,fontSize:8,color:P.textFaint,letterSpacing:1}},
+            h("div",null,"FIELD"),h("div",null,"TYPE"),h("div",null,"FORMAT"),h("div",null,"REQ")
+          ),
+          rec.fieldDetails.map(function(f,i){return h("div",{key:i,style:{borderBottom:"1px solid "+P.border+"22"}},
+            h("div",{style:{display:"grid",gridTemplateColumns:"130px 70px 1fr 50px",gap:0,padding:"5px 10px",background:i%2?P.raised:"transparent",alignItems:"start"}},
+              h("code",{style:{color:"#2dd4a8",fontSize:10,fontWeight:600}},f.field),
+              h("span",{style:{color:P.indigo,fontSize:9,fontFamily:P.mono}},f.type),
+              h("div",{style:{color:P.textDim,fontSize:9}},f.format),
+              h("span",{style:{fontSize:9,color:f.required===true?P.rose:f.required===false?"#4a5270":P.amber}},f.required===true?"✓":f.required===false?"—":typeof f.required==="string"?f.required.substring(0,8):"✓")
+            ),
+            f.notes?h("div",{style:{padding:"0 10px 5px 10px",background:i%2?P.raised:"transparent"}},
+              h("div",{style:{color:P.textFaint,fontSize:9,lineHeight:1.5,paddingLeft:4,borderLeft:"2px solid "+rec.color+"33"}},f.notes)
+            ):null
+          )})
+        ):h("div",{style:{display:"flex",gap:3,flexWrap:"wrap",marginBottom:12}},rec.sampleFields.map(function(f,i){return h("code",{key:i,style:{background:P.raised,borderRadius:4,padding:"2px 8px",fontSize:9,color:"#2dd4a8"}},f)}))
+      ),
+      /* Sample Record */
+      Sec("SAMPLE RECORD","📦",
+        h("div",{style:{background:"#080b12",border:"1px solid "+P.border,borderRadius:8,padding:12,fontFamily:P.mono,fontSize:10,color:P.textDim,lineHeight:1.6,whiteSpace:"pre-wrap"}},rec.sampleRecord)
+      ),
+      /* Dev Notes */
+      Sec("DEVELOPER NOTES","⚠️",
+        rec.devNotes.map(function(n,i){return h("div",{key:i,style:{padding:"5px 10px",borderLeft:"2px solid "+rec.color,color:P.textDim,fontSize:10,marginBottom:3}},n)})
+      ),
+      /* Dirty Data */
+      Sec("DIRTY DATA","💥",
+        rec.dirtyData.map(function(d,i){return h("div",{key:i,style:{background:P.roseBg,border:"1px solid "+P.rose+"22",borderRadius:8,padding:10,marginBottom:4}},
+          h("div",{style:{fontFamily:P.mono,fontSize:9,color:P.rose,marginBottom:3}},d.raw),
+          h("div",{style:{color:"#fca5a5",fontSize:10}},h("strong",null,"Issue: "),d.issue),
+          h("div",{style:{color:P.emerald,fontSize:10}},h("strong",null,"Rule: "),d.rule)
+        )})
+      )
+    )
+  );
+}
+
+function SecCrossLink(){
+  var h=React.createElement;
+  var links=[
+    {entity:"Acme Manufacturing LLC",records:[
+      {type:"Business Registration",icon:"🏢",data:"TX LLC, Active, formed 2018-03-15, Agent: CT Corp",color:P.emerald},
+      {type:"UCC Filing",icon:"📋",data:"UCC-1 #2025-0012345, BofA secured party, collateral: all equipment, lapse 2030",color:P.cyan},
+      {type:"Tax Lien",icon:"🔒",data:"Federal Tax Lien $125K, IRS, filed 2024-11-01, ACTIVE",color:P.rose},
+      {type:"Judgment",icon:"🔨",data:"Money judgment $250K, First National Bank v. Acme, UNSATISFIED",color:P.amber},
+      {type:"Suit",icon:"⚖️",data:"Harris County CV-2024-00042, breach of contract, DISPOSED",color:P.sky},
+      {type:"Bankruptcy",icon:"💥",data:"Chapter 11, S.D.Tex 25-10001, filed 2025-01-15, PENDING",color:P.indigo},
+    ]},
+  ];
+  return h("div",{className:"fade-up"},
+    h("p",{style:{color:P.textDim,fontSize:13,lineHeight:1.8,marginBottom:16}},"How all 6 record types connect for a single business entity. This is what a complete company profile looks like."),
+    links.map(function(l){return h("div",{key:l.entity,style:{background:P.surface,border:"1px solid "+P.border,borderRadius:12,padding:14,marginBottom:12}},
+      h("div",{style:{color:P.textBright,fontWeight:700,fontSize:16,fontFamily:P.serif,marginBottom:10}},"🏢 "+l.entity),
+      h("div",{style:{display:"grid",gap:4}},l.records.map(function(r,i){return h("div",{key:i,style:{display:"grid",gridTemplateColumns:"24px 160px 1fr",gap:8,padding:"8px 10px",background:i%2?P.raised:"transparent",borderRadius:6,borderLeft:"3px solid "+r.color,alignItems:"center"}},
+        h("span",{style:{fontSize:14}},r.icon),
+        h("div",{style:{color:r.color,fontWeight:600,fontSize:11}},r.type),
+        h("div",{style:{color:P.textDim,fontFamily:P.mono,fontSize:9}},r.data)
+      )}))
+    )}),
+    h(InfoBox,{title:"Entity ID — The Linking Key",icon:"🔑"},"To link all 6 record types: use EIN (Employer ID Number) for tax records + SEC CIK for public companies + state entity number for business registrations + case_number to link suits → judgments → liens + fuzzy name matching as fallback. No single universal ID exists — that's the engineering challenge.")
+  );
+}
+
+/* ══════════ NAV + APP ══════════ */
+var NAV=[
+  {id:"overview",label:"Overview & Connections",icon:"🗺️",sub:"How 6 record types connect",group:"FUNDAMENTALS"},
+  {id:"scenarios",label:"Business Health Scenarios",icon:"🏥",sub:"5 real-world patterns decoded",group:"FUNDAMENTALS"},
+  {id:"records",label:"Record Type Deep Dive",icon:"📋",sub:"Suits, UCC, Liens, Judgments, Reg, BK",group:"DATA"},
+  {id:"crosslink",label:"Entity Profile View",icon:"🔗",sub:"All records for one company",group:"INTEGRATION"},
+];
+
+function App(){
+  var _a=useState("overview"),active=_a[0],setActive=_a[1];
+  var views={overview:SecOverview,scenarios:SecScenarios,records:SecRecordType,crosslink:SecCrossLink};
+  var V=views[active];var lastG="";var h=React.createElement;
+  return h("div",{style:{display:"flex",minHeight:"100vh"}},
+    h("nav",{style:{width:220,minWidth:220,background:P.surface,borderRight:"1px solid "+P.border,padding:"20px 0",position:"sticky",top:0,height:"100vh",overflowY:"auto",display:"flex",flexDirection:"column"}},
+      h("div",{style:{padding:"0 16px 16px",borderBottom:"1px solid "+P.border}},
+        h("div",{style:{color:P.amber,fontFamily:P.serif,fontSize:18,fontWeight:700}},"US Public Records"),
+        h("div",{style:{color:P.textFaint,fontSize:10,marginTop:4}},"Business Entity Reference"),
+        h("div",{style:{display:"flex",gap:3,flexWrap:"wrap",marginTop:6}},
+          h(Badge,{color:P.sky},"Suits"),h(Badge,{color:P.cyan},"UCC"),h(Badge,{color:P.rose},"Liens"),h(Badge,{color:P.amber},"Judgments"),h(Badge,{color:P.emerald},"Reg"),h(Badge,{color:P.indigo},"BK"))
+      ),
+      h("div",{style:{flex:1,padding:"12px 8px"}},
+        NAV.map(function(n){
+          var grp="";
+          if(n.group!==lastG){lastG=n.group;grp=h("div",{key:"g_"+n.group,style:{color:P.textFaint,fontSize:8,fontWeight:700,letterSpacing:2,padding:"12px 10px 4px"}},n.group)}
+          return h(React.Fragment,{key:n.id},grp,
+            h("button",{onClick:function(){setActive(n.id)},style:{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderRadius:8,border:"none",cursor:"pointer",textAlign:"left",fontFamily:P.sans,background:active===n.id?P.raised:"transparent",marginBottom:2}},
+              h("span",{style:{fontSize:16}},n.icon),
+              h("div",null,
+                h("div",{style:{color:active===n.id?P.textBright:P.textDim,fontWeight:active===n.id?700:500,fontSize:12}},n.label),
+                h("div",{style:{color:P.textFaint,fontSize:9}},n.sub)
+              )
+            )
+          )
+        })
+      ),
+      h("div",{style:{padding:"12px 16px",borderTop:"1px solid "+P.border,color:P.textFaint,fontSize:9}},"6 Record Types • 50 States • Business Entities")
+    ),
+    h("main",{style:{flex:1,padding:28,maxWidth:960}},
+      h("div",{style:{marginBottom:24}},
+        h("div",{style:{color:P.amber,fontWeight:700,fontSize:24,fontFamily:P.serif}},NAV.find(function(n){return n.id===active}).icon+" "+NAV.find(function(n){return n.id===active}).label),
+        h("div",{style:{color:P.textDim,fontSize:12}},NAV.find(function(n){return n.id===active}).sub),
+        h("div",{style:{width:36,height:3,background:P.amber,borderRadius:2,marginTop:8}})
+      ),
+      h(V)
+    )
+  );
+}
+ReactDOM.render(React.createElement(App),document.getElementById("root"));
+
+</script></body></html>
